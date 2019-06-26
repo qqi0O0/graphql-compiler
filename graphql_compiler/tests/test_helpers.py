@@ -389,6 +389,47 @@ def get_schema():
     return schema
 
 
+def get_sql_metadata():
+    import sqlalchemy
+    tables = {}
+    sqlalchemy_metadata = sqlalchemy.MetaData()
+    sqlalchemy_metadata.schema = 'Animals.schema_1'
+    tables['Animal'] = sqlalchemy.Table(
+        'Animal',
+        sqlalchemy_metadata,
+        sqlalchemy.Column('uuid', sqlalchemy.String(36), primary_key=True),
+        sqlalchemy.Column('name', sqlalchemy.String(length=12), nullable=False),
+        sqlalchemy.Column('net_worth', sqlalchemy.Integer, nullable=False),
+        sqlalchemy.Column('birthday', sqlalchemy.Date, nullable=False),
+        sqlalchemy.Column('parent', sqlalchemy.Integer, nullable=True),
+    )
+    tables['Event'] = sqlalchemy.Table(
+        'Event',
+        sqlalchemy_metadata,
+        sqlalchemy.Column('uuid', sqlalchemy.String(36), primary_key=True),
+        sqlalchemy.Column('event_date', sqlalchemy.DateTime, nullable=False),
+    )
+    tables['Entity'] = sqlalchemy.Table(
+        'Entity',
+        sqlalchemy_metadata,
+        sqlalchemy.Column('uuid', sqlalchemy.String(36), primary_key=True),
+        sqlalchemy.Column('name', sqlalchemy.String(length=12), nullable=False),
+    )
+
+    edges = {
+        'Animal': {
+            'out_Animal_ParentOf': {
+                'to_table': 'Animal',
+                'from_column': 'parent',
+                'to_column': 'uuid',
+            }
+        },
+    }
+
+    return tables, edges
+
+
+
 def generate_schema_graph(graph_client):
     """Generate SchemaGraph from a pyorient client"""
     schema_records = graph_client.command(ORIENTDB_SCHEMA_RECORDS_QUERY)
