@@ -74,6 +74,28 @@ scalar_schema = dedent('''\
     }
 ''')
 
+union_schema = dedent('''\
+    schema {
+      query: SchemaQuery
+    }
+
+    type Human {
+      id: String
+    }
+
+    type Droid {
+      id: String
+    }
+
+    union HumanOrDroid = Human | Droid
+
+    type SchemaQuery {
+      Human: Human
+      Droid: Droid
+      HumanOrDroid: HumanOrDroid
+    }
+''')
+
 # TODO: directives :(
 # TODO: check the scalar directives sets
 # TODO: tests for name collisions between scalars and types, directives and types, etc
@@ -190,6 +212,38 @@ class TestRenameTypes(unittest.TestCase):
         ''')
         self.assertEqual(renamed_schema, print_ast(ast))
         self.assertEqual({'NewHuman': ('Human', 'schema')}, blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_union_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(union_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type NewHuman {
+              id: String
+            }
+
+            type NewDroid {
+              id: String
+            }
+
+            union NewHumanOrDroid = NewHuman | NewDroid
+
+            type SchemaQuery {
+              Human: NewHuman
+              Droid: NewDroid
+              HumanOrDroid: NewHumanOrDroid
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({'NewHuman': ('Human', 'schema'), 'NewDroid': ('Droid', 'schema'),
+                          'NewHumanOrDroid': ('HumanOrDroid', 'schema')},
+                         blank_schema.reverse_name_id_map)
         self.assertEqual({}, blank_schema.reverse_root_field_id_map)
 
 

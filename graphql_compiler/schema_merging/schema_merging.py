@@ -59,14 +59,12 @@ class MergedSchema(object):
         for schema_info in schemas_info:
             if len(schema_info) == 2:
                 schema_string, schema_identifier = schema_info
-                renamed_schema = self._modify_schema(schema_string, schema_identifier)
-                self._merge_schema(renamed_schema)
-                # TODO: also need to remove excess scalars and directives
+                modified_ast = self._modify_schema(schema_string, schema_identifier)
+                self._merge_schema(modified_ast)
             elif len(schema_info) == 3:
                 schema_string, schema_identifier, rename_func = schema_info
-                renamed_schema = self._modify_schema(schema_string, schema_identifier, rename_func)
-                self._merge_schema(renamed_schema)
-                # TODO: also need to remove excess scalars and directives
+                modified_ast = self._modify_schema(schema_string, schema_identifier, rename_func)
+                self._merge_schema(modified_ast)
             else:
                 raise ValueError('Expected list elements of 2-tuples or 3-tuples.')
 
@@ -306,8 +304,7 @@ class RenameVisitor(Visitor):
         Return:
             True if the node should be renamed, False otherwise
         """
-        # Path only approach is no good, can't tell apart scalar definition and enum definition
-        # for example
+        # Path along may not be quite enough to know the structure for certain
         name_string = node.value
         if (
             name_string in self.builtin_types or
@@ -323,6 +320,9 @@ class RenameVisitor(Visitor):
             return True
         # NamedType, e.g. 'Character' in 'friend: Character'
         if self._match_end_of_list(path, ['type', 'name']):
+            return True
+        # Union, e.g. 'Human' in 'union HumanOrDroid = Human | Droid
+        if self._match_end_of_list(path, ['types', None, 'name']):
             return True
         # EnumValueDefinition, e.g. 'NEWHOPE' in 'Enum Episode { NEWHOPE }'
         if self._match_end_of_list(path, ['values', None, 'name']):
@@ -436,12 +436,15 @@ class GetSchemaDataVisitor(Visitor):
         self.schema_data.scalars.add(node.name.value)
 
     def enter_DirectiveDefinition(self, node, *args):
+        # NOTE: currently we don't check if the definitions of the directives agree
+        # any directive that comes after one of the same one is simply erased, even if it
+        # has a different definition
         self.schema_data.directives.add(node.name.value)
 
 
 
 # TODO: union types
-# TODO: directives
+# TODO: directives on types (how do those exist inside a schema?)
 # TODO: implement query demangling 
 # TODO: look at code for splitting queries and see where the namespace fits in
 
