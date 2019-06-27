@@ -41,6 +41,8 @@ class MergedSchema(object):
         self.reverse_root_field_id_map = {}  # dict mapping new field name to 
                                              # (original field name, schema id)
         self.query_type = 'RootSchemaQuery'
+        self.scalars = set()
+        self.directives = set()
 
         empty_schema = dedent('''
             schema {
@@ -106,7 +108,7 @@ class MergedSchema(object):
                                  rename_func=lambda name:name):
         """Modify schema so that the output can be directly merged.
 
-        Name map will also be modified.
+        Name and field maps will also be modified.
 
         The query type will be renamed and changed from a type definition to a renamed
         type extension.
@@ -123,7 +125,7 @@ class MergedSchema(object):
 
         Raises:
             SchemaError if the input schema contains extensions, as the renamer doesn't currently
-                support dealing with extensions
+                support extensions
             SchemaTypeConflictError if a renamed type in the schemas string causes a type name
                 conflict in schema_namespace
 
@@ -132,7 +134,7 @@ class MergedSchema(object):
         """
         ast = parse(schema_string)  # type: Document
 
-        # Get data about the schema first
+        # Get data about the schema
         schema_data = self._get_schema_data(ast)
 
         # Extensions not allowed in input schemas
@@ -143,9 +145,13 @@ class MergedSchema(object):
 
         # Traverse the schema AST, renaming types as necessary
         self._rename_types(ast, schema_identifier, rename_func, schema_data)
+
         # Modify the query type and its fields
         self._modify_query_type(ast, schema_identifier, rename_func, cur_query_type_name,
                                 self.query_type)
+
+        # Remove duplicate scalars and directives, update scalar + directive sets
+        self._remove_duplicates_and_update(ast, schema_data.scalars, schema_data.directives)
 
         return ast
 
@@ -176,19 +182,17 @@ class MergedSchema(object):
             rename_func: callable, used to rename types, interfaces, enums, etc
             schema_data: SchemaData, information about current schema
         """
-        visitor = RenameVisitor(rename_func, schema_data.query_type, 
-                                schema_data.user_defined_scalars)
+        visitor = RenameVisitor(rename_func, schema_data.query_type, schema_data.scalars)
         visit(ast, visitor)  # type: Document
 
         # Update name map, check for conflicts
         # TODO: what about conflicts between things not renamed, say scalars? 
-        # merge will throw an error, but should we check for that beforehand? 
-        # test it out later
+        # extend_schema will throw a GraphQLError, but should we check for that beforehand? 
         new_name_intersection = (six.viewkeys(self.reverse_name_id_map) & 
                                  six.viewkeys(visitor.reverse_name_map))
         if (len(new_name_intersection) != 0):  # name conflict
             raise SchemaTypeConflictError(
-                'The following renames have already been used: {}'.format(new_name_intersection)
+                'The following names have already been used: {}'.format(new_name_intersection)
             )
         else:  # no conflict, update name map
             for new_name, original_name in six.iteritems(visitor.reverse_name_map):
@@ -221,14 +225,21 @@ class MergedSchema(object):
                 self.reverse_root_field_id_map[new_field_name] = \
                     (original_field_name, schema_identifier)
 
-    def _merge_schema(self, schema):
+    def _remove_duplicates_and_update(self, ast, new_scalars, new_directives):
+        """Remove any scalars already defined from the ast, update internal records."""
+        visitor = RemoveDuplicatesVisitor(self.scalars, self.directives)
+        visit(ast, visitor)
+        self.scalars.update(new_scalars)
+        self.directives.update(new_directives)
+
+    def _merge_schema(self, ast):
         """Merge input schema into merged_schema.
 
         Args: 
-            schema: Document, ast that represents the input schema
+            ast: Document, representing the new input schema
         """
         # TODO: cross service edges?
-        self.merged_schema = extend_schema(self.merged_schema, schema)
+        self.merged_schema = extend_schema(self.merged_schema, ast)
 
     def _add_type(self, original_name, new_name, schema_identifier):
         """Add new type to namespace.
@@ -248,7 +259,8 @@ class MergedSchema(object):
 class SchemaData(object):
     def __init__(self):
         self.query_type = None
-        self.user_defined_scalars = set()
+        self.scalars = set()
+        self.directives = set()
         self.has_extension = False
 
 
@@ -392,6 +404,22 @@ class ModifyQueryTypeVisitor(Visitor):
             self.reverse_field_map[new_field_name] = field_name
 
 
+class RemoveDuplicatesVisitor(Visitor):
+    """Remove repeated scalar or directive definitions."""
+    def __init__(self, existing_scalars, existing_directives):
+        self.existing_scalars = existing_scalars
+        self.existing_directives = existing_directives
+
+    def enter_ScalarTypeDefinition(self, node, key, parent, path, ancestors):
+        if node.name.value in self.existing_scalars:
+            parent[key] = None
+
+    def enter_DirectiveDefinition(self, node, key, parent, path, ancestors):
+        if node.name.value in self.existing_directives:
+            parent[key] = None
+
+
+
 class GetSchemaDataVisitor(Visitor):
     """Gather information about the schema before making any transforms."""
     def __init__(self):
@@ -405,7 +433,10 @@ class GetSchemaDataVisitor(Visitor):
             self.schema_data.query_type = node.type.name.value
 
     def enter_ScalarTypeDefinition(self, node, *args):
-        self.schema_data.user_defined_scalars.add(node.name.value)
+        self.schema_data.scalars.add(node.name.value)
+
+    def enter_DirectiveDefinition(self, node, *args):
+        self.schema_data.directives.add(node.name.value)
 
 
 
