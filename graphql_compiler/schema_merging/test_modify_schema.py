@@ -1,0 +1,311 @@
+import unittest
+from textwrap import dedent
+
+from .schema_merging import *
+from graphql.language.printer import print_ast
+from graphql import parse
+
+
+basic_schema = dedent('''\
+        schema {
+          query: SchemaQuery
+        }
+
+        type Human {
+          id: String
+        }
+
+        type SchemaQuery {
+          Human: Human
+        }
+    ''')
+
+enum_schema = dedent('''\
+        schema {
+          query: SchemaQuery
+        }
+
+        type Human {
+          height: Height
+        }
+
+        type SchemaQuery {
+          Human: Human
+        }
+
+        enum Height {
+          TALL
+          SHORT
+        }
+    ''')
+
+interface_schema = dedent('''\
+        schema {
+          query: SchemaQuery
+        }
+
+        interface Character {
+          id: String
+        }
+
+        type Human implements Character {
+          name: String
+        }
+
+        type SchemaQuery {
+          Character: Character
+          Human: Human
+        }
+    ''')
+
+scalar_schema = dedent('''\
+        schema {
+          query: SchemaQuery
+        }
+
+        type Human {
+          birthday: Date
+        }
+
+        scalar Date
+
+        type SchemaQuery {
+          Human: Human
+        }
+    ''')
+
+various_types_schema = dedent('''\
+        schema {
+          query: SchemaQuery
+        }
+
+        scalar Date
+
+        enum Height {
+          TALL
+          SHORT
+        }
+
+        interface Character {
+          id: String
+        }
+
+        type Human implements Character {
+          name: String
+          birthday: Date
+        }
+
+        type Giraffe implements Character {
+          height: Height
+        }
+
+        type SchemaQuery {
+          Human: Human
+          Giraffe: Giraffe
+        }
+    ''')
+
+# TODO: directives :(
+
+
+class TestRenameTypes(unittest.TestCase):
+    def test_no_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(basic_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: name, schema_data) 
+        self.assertEqual(basic_schema, print_ast(ast))
+        self.assertEqual({'Human': ('Human', 'schema')}, blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_basic_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(basic_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type NewHuman {
+              id: String
+            }
+
+            type SchemaQuery {
+              Human: NewHuman
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({'NewHuman': ('Human', 'schema')}, blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_enum_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(enum_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type NewHuman {
+              height: NewHeight
+            }
+
+            type SchemaQuery {
+              Human: NewHuman
+            }
+
+            enum NewHeight {
+              TALL
+              SHORT
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({'NewHuman': ('Human', 'schema'), 'NewHeight': ('Height', 'schema')},
+                         blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_interface_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(interface_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            interface NewCharacter {
+              id: String
+            }
+
+            type NewHuman implements NewCharacter {
+              name: String
+            }
+
+            type SchemaQuery {
+              Character: NewCharacter
+              Human: NewHuman
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual(
+            {'NewHuman': ('Human', 'schema'), 'NewCharacter': ('Character', 'schema')},
+            blank_schema.reverse_name_id_map
+        )
+        
+    def test_scalar_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(scalar_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type NewHuman {
+              birthday: Date
+            }
+
+            scalar Date
+
+            type SchemaQuery {
+              Human: NewHuman
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({'NewHuman': ('Human', 'schema')}, blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+
+class TestModifyQueryType(unittest.TestCase):
+    def test_modify_query_no_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(basic_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._modify_query_type(ast, 'schema', lambda name: name, schema_data.query_type,
+                                        'RootSchemaQuery')
+        renamed_schema = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type Human {
+              id: String
+            }
+
+            extend type RootSchemaQuery {
+              Human: Human
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({}, blank_schema.reverse_name_id_map)
+        self.assertEqual({'Human': ('Human', 'schema')}, blank_schema.reverse_root_field_id_map)
+
+    def test_modify_query_basic_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(basic_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._modify_query_type(ast, 'schema', lambda name: 'New' + name,
+                                        schema_data.query_type, 'RootSchemaQuery')
+        renamed_schema = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type Human {
+              id: String
+            }
+
+            extend type RootSchemaQuery {
+              NewHuman: Human
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({}, blank_schema.reverse_name_id_map)
+        self.assertEqual({'NewHuman': ('Human', 'schema')}, blank_schema.reverse_root_field_id_map)
+
+    def test_modify_query_various_types(self):
+        blank_schema = MergedSchema([])
+        ast = parse(various_types_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._modify_query_type(ast, 'schema', lambda name: 'New' + name,
+                                        schema_data.query_type, 'RootSchemaQuery')
+        renamed_schema = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            scalar Date
+
+            enum Height {
+              TALL
+              SHORT
+            }
+
+            interface Character {
+              id: String
+            }
+
+            type Human implements Character {
+              name: String
+              birthday: Date
+            }
+
+            type Giraffe implements Character {
+              height: Height
+            }
+
+            extend type RootSchemaQuery {
+              NewHuman: Human
+              NewGiraffe: Giraffe
+            }
+        ''') 
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual({}, blank_schema.reverse_name_id_map)
+        self.assertEqual({'NewHuman': ('Human', 'schema'), 'NewGiraffe': ('Giraffe', 'schema')},
+                         blank_schema.reverse_root_field_id_map)
