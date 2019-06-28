@@ -40,19 +40,20 @@ class MergedSchema(object):
         self.scalars = set()
         self.directives = set()
 
+        # Start with empty schema, with only one dummy field (empty type definition not allowed)
+        dummy_field = '_: Boolean'
         empty_schema = dedent('''
             schema {
               query: %s
             }
 
             type %s {
-              _: Boolean
+              %s
             }
-        ''' % (self.query_type, self.query_type))
-        # TODO: remove dummy field
-
+        ''' % (self.query_type, self.query_type, dummy_field))
         self.merged_schema = build_ast_schema(parse(empty_schema))
 
+        # Modify each input schema to a mergeable state, then merge
         for schema_info in schemas_info:
             if len(schema_info) == 2:
                 schema_string, schema_identifier = schema_info
@@ -64,6 +65,9 @@ class MergedSchema(object):
                 self._merge_schema(modified_ast)
             else:
                 raise ValueError('Expected list elements of 2-tuples or 3-tuples.')
+
+        # Remove initial dummy field
+        self._remove_dummy_field(dummy_field)
 
     def demangle_query(self, query_string, schema_identifier):
         """Demangle all types in query_string from renames to originals.
@@ -140,7 +144,7 @@ class MergedSchema(object):
         schema_data = self._get_schema_data(ast)
 
         # Extensions not allowed in input schemas
-        if schema_data.has_extensions:
+        if schema_data.has_extension:
             raise SchemaError("Input schemas should not contain extensions")
 
         cur_query_type_name = schema_data.query_type
@@ -247,19 +251,28 @@ class MergedSchema(object):
         # don't know what form the equivalence information comes in
         self.merged_schema = extend_schema(self.merged_schema, ast)
 
-    def _add_type(self, original_name, new_name, schema_identifier):
-        """Add new type to namespace.
+    def _remove_dummy_field(self, dummy_field):
+        """Remove dummy root field initially added to prevent empty type definition.
+
+        Can't figure out how to do this properly, so will convert schema to string, remove line
+        in string, and convert back. There is probably a better method.
 
         Args:
-            original_name: string, name of the type in its own schema
-            new_name: string, renamed name of the function
-            schema_identifier: string, identifies the schema that the type came from
-        
+            dummy_field: string
+
         Raises:
-            SchemaTypeConflictError if the new addition's new_name conflicts with the renamed name
-                of an existing type in the namespace
+            SchemaError if dummy field is not present
         """
-        pass
+        schema_string = self.get_schema_string()
+        schema_lines = schema_string.split('\n')
+        for line_index in range(0, len(schema_lines)):
+            if schema_lines[line_index].strip() == dummy_field:
+                schema_lines.pop(line_index)
+                schema_string_no_dummy = '\n'.join(schema_lines)
+                self.merged_schema = build_ast_schema(parse(schema_string_no_dummy))
+                return
+        raise SchemaError('Dummy field not found')
+
 
 
 class SchemaData(object):
@@ -336,7 +349,11 @@ class RenameSchemaVisitor(Visitor):
         if self._match_end_of_list(path, ['values', None, 'name']):
             return False
         # InputValueDefinition, e.g. 'episode' in 'hero(episode: Episode): Character'
+        #                       e.g. 'source_field' in '@stitch(source_field: "a", sink_field: "b")'
         if self._match_end_of_list(path, ['arguments', None, 'name']):
+            return False
+        # Directive, e.g. 'stitch' in '@stitch(source_field: "a", sink_field: "b")' on a field
+        if self._match_end_of_list(path, ['directives', None, 'name']):
             return False
         # FieldDefinition, e.g. 'friend' in 'friend: Character'
         # fields of the query type will be renamed later
@@ -419,7 +436,6 @@ class RemoveDuplicatesVisitor(Visitor):
         """If directive has already been defined, remove it from the ast."""
         if node.name.value in self.existing_directives:
             parent[key] = None
-
 
 
 class GetSchemaDataVisitor(Visitor):
