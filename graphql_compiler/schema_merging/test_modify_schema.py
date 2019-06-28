@@ -5,6 +5,8 @@ from .schema_merging import *
 from graphql.language.printer import print_ast
 from graphql import parse
 
+# Unit tests for each step in _modify_schema
+
 
 basic_schema = dedent('''\
     schema {
@@ -25,12 +27,12 @@ enum_schema = dedent('''\
       query: SchemaQuery
     }
 
-    type Human {
+    type Droid {
       height: Height
     }
 
     type SchemaQuery {
-      Human: Human
+      Droid: Droid
     }
 
     enum Height {
@@ -54,6 +56,30 @@ interface_schema = dedent('''\
 
     type SchemaQuery {
       Character: Character
+      Human: Human
+    }
+''')
+
+interfaces_schema = dedent('''\
+    schema {
+      query: SchemaQuery
+    }
+
+    interface Character {
+      id: String
+    }
+
+    interface Creature {
+      age: Int
+    }
+
+    type Human implements Character, Creature {
+      name: String
+    }
+
+    type SchemaQuery {
+      Character: Character
+      Creature: Creature
       Human: Human
     }
 ''')
@@ -96,9 +122,37 @@ union_schema = dedent('''\
     }
 ''')
 
+list_schema = dedent('''\
+    schema {
+      query: SchemaQuery
+    }
+
+    type Droid implements Character {
+      heights: [Height]
+      dates: [Date]
+      friends: [Droid]
+      enemies: [Character]
+    }
+
+    type SchemaQuery {
+      Droid: [Droid]
+    }
+
+    scalar Date
+
+    interface Character {
+      id: String
+    }
+
+    enum Height {
+      TALL
+      SHORT
+    }
+''')
+
 # TODO: directives :(
-# TODO: check the scalar directives sets
 # TODO: tests for name collisions between scalars and types, directives and types, etc
+# collision tests need to wait until I know what behavior I want for collision errors
 
 
 class TestRenameTypes(unittest.TestCase):
@@ -143,12 +197,12 @@ class TestRenameTypes(unittest.TestCase):
               query: SchemaQuery
             }
 
-            type NewHuman {
+            type NewDroid {
               height: NewHeight
             }
 
             type SchemaQuery {
-              Human: NewHuman
+              Droid: NewDroid
             }
 
             enum NewHeight {
@@ -157,7 +211,7 @@ class TestRenameTypes(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_schema, print_ast(ast))
-        self.assertEqual({'NewHuman': ('Human', 'schema'), 'NewHeight': ('Height', 'schema')},
+        self.assertEqual({'NewDroid': ('Droid', 'schema'), 'NewHeight': ('Height', 'schema')},
                          blank_schema.reverse_name_id_map)
         self.assertEqual({}, blank_schema.reverse_root_field_id_map)
 
@@ -189,7 +243,44 @@ class TestRenameTypes(unittest.TestCase):
             {'NewHuman': ('Human', 'schema'), 'NewCharacter': ('Character', 'schema')},
             blank_schema.reverse_name_id_map
         )
-        
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_interfaces_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(interfaces_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            interface NewCharacter {
+              id: String
+            }
+
+            interface NewCreature {
+              age: Int
+            }
+
+            type NewHuman implements NewCharacter, NewCreature {
+              name: String
+            }
+
+            type SchemaQuery {
+              Character: NewCharacter
+              Creature: NewCreature
+              Human: NewHuman
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual(
+            {'NewHuman': ('Human', 'schema'), 'NewCharacter': ('Character', 'schema'),
+             'NewCreature': ('Creature', 'schema')},
+            blank_schema.reverse_name_id_map
+        )
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
     def test_scalar_rename(self):
         blank_schema = MergedSchema([])
         ast = parse(scalar_schema)
@@ -244,6 +335,95 @@ class TestRenameTypes(unittest.TestCase):
         self.assertEqual({'NewHuman': ('Human', 'schema'), 'NewDroid': ('Droid', 'schema'),
                           'NewHumanOrDroid': ('HumanOrDroid', 'schema')},
                          blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_multiple_schemas_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(basic_schema)
+        basic_schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'basic', lambda name: 'Basic' + name, basic_schema_data) 
+        basic_renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type BasicHuman {
+              id: String
+            }
+
+            type SchemaQuery {
+              Human: BasicHuman
+            }
+        ''')
+        self.assertEqual(basic_renamed_schema, print_ast(ast))
+        self.assertEqual({'BasicHuman': ('Human', 'basic')}, blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+        ast = parse(enum_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'enum', lambda name: 'Enum' + name, schema_data) 
+        enum_renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type EnumDroid {
+              height: EnumHeight
+            }
+
+            type SchemaQuery {
+              Droid: EnumDroid
+            }
+
+            enum EnumHeight {
+              TALL
+              SHORT
+            }
+        ''')
+        self.assertEqual(enum_renamed_schema, print_ast(ast))
+        self.assertEqual({'BasicHuman': ('Human', 'basic'), 'EnumDroid': ('Droid', 'enum'),
+                          'EnumHeight': ('Height', 'enum')},
+                         blank_schema.reverse_name_id_map)
+        self.assertEqual({}, blank_schema.reverse_root_field_id_map)
+
+    def test_lists_rename(self):
+        blank_schema = MergedSchema([])
+        ast = parse(list_schema)
+        schema_data = blank_schema._get_schema_data(ast)
+        blank_schema._rename_types(ast, 'schema', lambda name: 'New' + name, schema_data) 
+        renamed_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type NewDroid implements NewCharacter {
+              heights: [NewHeight]
+              dates: [Date]
+              friends: [NewDroid]
+              enemies: [NewCharacter]
+            }
+
+            type SchemaQuery {
+              Droid: [NewDroid]
+            }
+
+            scalar Date
+
+            interface NewCharacter {
+              id: String
+            }
+
+            enum NewHeight {
+              TALL
+              SHORT
+            }
+        ''')
+        self.assertEqual(renamed_schema, print_ast(ast))
+        self.assertEqual(
+            {'NewDroid': ('Droid', 'schema'), 'NewCharacter': ('Character', 'schema'),
+             'NewHeight': ('Height', 'schema')},
+            blank_schema.reverse_name_id_map
+        )
         self.assertEqual({}, blank_schema.reverse_root_field_id_map)
 
 

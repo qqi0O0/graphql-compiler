@@ -14,10 +14,6 @@ class SchemaTypeConflictError(SchemaError):
     pass
 
 
-class SchemaTypeNotFoundError(SchemaError):
-    pass
-
-
 class MergedSchema(object):
     def __init__(self, schemas_info):
         """Rename (mangle) types and merge input schemas according to input information.
@@ -25,12 +21,12 @@ class MergedSchema(object):
         Args:
             schemas_info: list of (schema_string, schema_identifier, rename_func)
                           of types (string, string, callable). rename_func may be ommitted to
-                          use the defaults. Schemas will be merged in order.
+                          use the default identity function. Schemas will be merged in order.
                               schema_string is a schema written in GraphQL schema language
                               schema_identifier is a string that uniquely identifies the schema
-                              rename_func is a callable used to convert original type names to new
-                                  type names, taking a string of the original type name as its
-                                  argument. Defaults to the identity function
+                              rename_func is a callable taking string to string, used to convert
+                                  original type names to new type names. Defaults to the identity
+                                  function
 
         Raises:
             SchemaError if any schema contains extensions
@@ -53,6 +49,7 @@ class MergedSchema(object):
               _: Boolean
             }
         ''' % (self.query_type, self.query_type))
+        # TODO: remove dummy field
 
         self.merged_schema = build_ast_schema(parse(empty_schema))
 
@@ -68,19 +65,26 @@ class MergedSchema(object):
             else:
                 raise ValueError('Expected list elements of 2-tuples or 3-tuples.')
 
-    def demangle_query(self, schema_identifier, query_string):
+    def demangle_query(self, query_string, schema_identifier):
         """Demangle all types in query_string from renames to originals.
 
         Args:
             query_string: string
+            schema_identifier: string
 
         Raises:
-            SchemaTypeNotFoundError if a type in query string cannot be found in the schema that
+            SchemaError if a type in query string cannot be found in the schema that
                 schema_identifier points to
 
         Returns:
-            query string where type renames are demangled
+            query string where type names are demangled
         """
+        ast = parse(query_string)
+        # need to translate back both root fields and types. how to distinguish?
+        # for example, maybe 'human: Human' got renamed to 'NewHuman: NewHuman' for some reason,
+        # which is perfectly legal. Which one does NewHuman mean? 
+        # is it only the root of the query that can be a root field? 
+        # some fields are not translated, such as alias
         pass
 
     def get_original(self, new_name):
@@ -130,7 +134,7 @@ class MergedSchema(object):
         Return:
             Document, the ast of the modified schema
         """
-        ast = parse(schema_string)  # type: Document
+        ast = parse(schema_string)
 
         # Get data about the schema
         schema_data = self._get_schema_data(ast)
@@ -180,10 +184,11 @@ class MergedSchema(object):
             rename_func: callable, used to rename types, interfaces, enums, etc
             schema_data: SchemaData, information about current schema
         """
-        visitor = RenameVisitor(rename_func, schema_data.query_type, schema_data.scalars)
+        visitor = RenameSchemaVisitor(rename_func, schema_data.query_type, schema_data.scalars)
         visit(ast, visitor)  # type: Document
 
         # Update name map, check for conflicts
+        # What if I skip checking for conflicts and let merge raise GraphQLError instead?
         # TODO: what about conflicts between things not renamed, say scalars? 
         # extend_schema will throw a GraphQLError, but should we check for that beforehand? 
         new_name_intersection = (six.viewkeys(self.reverse_name_id_map) & 
@@ -236,7 +241,10 @@ class MergedSchema(object):
         Args: 
             ast: Document, representing the new input schema
         """
-        # TODO: cross service edges?
+        # TODO: add in cross service edges?
+        # take in some kind of type/field equivalence hints plus exiting information inside the
+        # merged schema, output the extension schema
+        # don't know what form the equivalence information comes in
         self.merged_schema = extend_schema(self.merged_schema, ast)
 
     def _add_type(self, original_name, new_name, schema_identifier):
@@ -262,7 +270,7 @@ class SchemaData(object):
         self.has_extension = False
 
 
-class RenameVisitor(Visitor):
+class RenameSchemaVisitor(Visitor):
     """Used to traverse a Document AST, editing the names of nodes on the way."""
     def __init__(self, rename_func, query_type, scalar_types):
         self.rename_func = rename_func  # callable that takes string to string
@@ -344,6 +352,10 @@ class RenameVisitor(Visitor):
         node.value = new_name_string
         self.reverse_name_map[new_name_string] = name_string
 
+    def _skip_branch(self, node, *args):
+        """Do not traverse down the current node."""
+        return False
+
     # Methods named enter_TYPENAME will be called on a node of TYPENAME upon entering it in
     # traversal. Similarly, methods named leave_TYPENAME will be called upon leaving a node.
     # For a complete list of possibilities for TYPENAME, see QUERY_DOCUMENT_KEYS in file
@@ -354,19 +366,7 @@ class RenameVisitor(Visitor):
         if self._need_rename(node, key, parent, path, ancestors):
             self._rename_name_add_to_record(node)
 
-    def skip_branch(self, node, *args):
-        """Do not traverse down the current node."""
-        return False
-
-    enter_ScalarTypeDefinition = enter_DirectiveDefinition = skip_branch
-
-#    enter_NamedType = enter_InterfaceTypeDefinition = enter_EnumTypeDefinition = \
-#        enter_ObjectTypeDefinition = rename_name_add_to_record
-    
-#    enter_Name = rename_name
-#    enter_EnumValueDefinition = skip_branch
-#    enter_FieldDefinition = skip_branch
-
+    enter_ScalarTypeDefinition = enter_DirectiveDefinition = _skip_branch
 
 
 class ModifyQueryTypeVisitor(Visitor):
@@ -411,10 +411,12 @@ class RemoveDuplicatesVisitor(Visitor):
         self.existing_directives = existing_directives
 
     def enter_ScalarTypeDefinition(self, node, key, parent, path, ancestors):
+        """If scalar has already been defined, remove it from the ast."""
         if node.name.value in self.existing_scalars:
             parent[key] = None
 
     def enter_DirectiveDefinition(self, node, key, parent, path, ancestors):
+        """If directive has already been defined, remove it from the ast."""
         if node.name.value in self.existing_directives:
             parent[key] = None
 
@@ -443,9 +445,9 @@ class GetSchemaDataVisitor(Visitor):
 
 
 
-# TODO: union types
 # TODO: directives on types (how do those exist inside a schema?)
-# TODO: implement query demangling 
+# TODO: decide what do for checking name collisions among the 3 options
+# TODO: implement query demangling
 # TODO: look at code for splitting queries and see where the namespace fits in
 
 # TODO: provide rename only on collision as an option
