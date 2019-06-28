@@ -1,4 +1,5 @@
 from graphql import build_ast_schema, extend_schema, parse
+from graphql.error import GraphQLError
 from graphql.language.visitor import Visitor, visit, BREAK
 from graphql.language.ast import TypeExtensionDefinition
 from graphql.utils.schema_printer import print_schema
@@ -22,7 +23,8 @@ class MergedSchema(object):
             schemas_info: list of (schema_string, schema_identifier, rename_func)
                           of types (string, string, callable). rename_func may be ommitted to
                           use the default identity function. Schemas will be merged in order.
-                              schema_string is a schema written in GraphQL schema language
+                              schema_string is a schema written in GraphQL schema language, it
+                                  must represent a valid, standalone schema
                               schema_identifier is a string that uniquely identifies the schema
                               rename_func is a callable taking string to string, used to convert
                                   original type names to new type names. Defaults to the identity
@@ -57,10 +59,12 @@ class MergedSchema(object):
         for schema_info in schemas_info:
             if len(schema_info) == 2:
                 schema_string, schema_identifier = schema_info
+                self._check_input_schema_valid(schema_string)
                 modified_ast = self._modify_schema(schema_string, schema_identifier)
                 self._merge_schema(modified_ast)
             elif len(schema_info) == 3:
                 schema_string, schema_identifier, rename_func = schema_info
+                self._check_input_schema_valid(schema_string)
                 modified_ast = self._modify_schema(schema_string, schema_identifier, rename_func)
                 self._merge_schema(modified_ast)
             else:
@@ -110,6 +114,21 @@ class MergedSchema(object):
         """Return a string describing the merged schema in GraphQL Schema Language."""
         return print_schema(self.merged_schema)
 
+    def _check_input_schema_valid(self, schema_string):
+        """Check that input schema is a valid standalone schema.
+
+        Args:
+            schema_string: string
+
+        Raises:
+            SchemaError if input schema is not a valid schema
+        """
+        try:
+            build_ast_schema(parse(schema_string))
+        except Exception:  # Can't be more specific -- see graphql/utils/build_ast_schema.py:187
+            raise SchemaError("Input schema does not define a valid schema")
+
+
     def _modify_schema(self, schema_string, schema_identifier,
                                  rename_func=lambda name:name):
         """Modify schema so that the output can be directly merged.
@@ -133,7 +152,7 @@ class MergedSchema(object):
             SchemaError if the input schema contains extensions, as the renamer doesn't currently
                 support extensions
             SchemaTypeConflictError if a renamed type in the schemas string causes a type name
-                conflict in schema_namespace
+                conflict TODO scalar type conflict 
 
         Return:
             Document, the ast of the modified schema
@@ -191,19 +210,12 @@ class MergedSchema(object):
         visitor = RenameSchemaVisitor(rename_func, schema_data.query_type, schema_data.scalars)
         visit(ast, visitor)  # type: Document
 
-        # Update name map, check for conflicts
-        # What if I skip checking for conflicts and let merge raise GraphQLError instead?
-        # TODO: what about conflicts between things not renamed, say scalars? 
-        # extend_schema will throw a GraphQLError, but should we check for that beforehand? 
-        new_name_intersection = (six.viewkeys(self.reverse_name_id_map) & 
-                                 six.viewkeys(visitor.reverse_name_map))
-        if (len(new_name_intersection) != 0):  # name conflict
-            raise SchemaTypeConflictError(
-                'The following names have already been used: {}'.format(new_name_intersection)
-            )
-        else:  # no conflict, update name map
-            for new_name, original_name in six.iteritems(visitor.reverse_name_map):
-                self.reverse_name_id_map[new_name] = (original_name, schema_identifier)
+        # Update name map
+        # We choose to not check for conflicts here, because we won't catch name conflicts between
+        # scalar and non-scalar types/interfaces/enums here. Any conflicts will be caught in the
+        # merge step.
+        for new_name, original_name in six.iteritems(visitor.reverse_name_map):
+            self.reverse_name_id_map[new_name] = (original_name, schema_identifier)
 
     def _modify_query_type(self, ast, schema_identifier, rename_func, cur_query_type_name,
                            target_query_type_name):
@@ -244,12 +256,18 @@ class MergedSchema(object):
 
         Args: 
             ast: Document, representing the new input schema
+
+        Raises:
+            SchemaError if any types, interfaces, enums, or scalars cause name conflicts
         """
         # TODO: add in cross service edges?
         # take in some kind of type/field equivalence hints plus exiting information inside the
         # merged schema, output the extension schema
         # don't know what form the equivalence information comes in
-        self.merged_schema = extend_schema(self.merged_schema, ast)
+        try:
+            self.merged_schema = extend_schema(self.merged_schema, ast)
+        except GraphQLError as e:  # Name conflict
+            raise SchemaError("Merge unsuccessful. {}".format(e.message))
 
     def _remove_dummy_field(self, dummy_field):
         """Remove dummy root field initially added to prevent empty type definition.

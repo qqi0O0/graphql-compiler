@@ -10,6 +10,7 @@ from graphql import parse
 
 # TODO: tests for name collisions between scalars and types, directives and types, etc
 # collision tests need to wait until I know what behavior I want for collision errors
+# TODO: NonNullType
 
 def get_dummy_schema():
     dummy_schema_string = dedent('''\
@@ -26,7 +27,6 @@ def get_dummy_schema():
     return dummy_schema
 
 class TestRenameTypes(unittest.TestCase):
-
     def test_no_rename(self):
         blank_schema = get_dummy_schema()
         ast = parse(basic_schema)
@@ -101,7 +101,7 @@ class TestRenameTypes(unittest.TestCase):
             }
 
             type NewHuman implements NewCharacter {
-              name: String
+              id: String
             }
 
             type SchemaQuery {
@@ -135,7 +135,8 @@ class TestRenameTypes(unittest.TestCase):
             }
 
             type NewHuman implements NewCharacter, NewCreature {
-              name: String
+              id: String
+              age: Int
             }
 
             type SchemaQuery {
@@ -268,6 +269,7 @@ class TestRenameTypes(unittest.TestCase):
             }
 
             type NewDroid implements NewCharacter {
+              id: String
               heights: [NewHeight]
               dates: [Date]
               friends: [NewDroid]
@@ -399,11 +401,13 @@ class TestModifyQueryType(unittest.TestCase):
             }
 
             type Human implements Character {
+              id: String
               name: String
               birthday: Date
             }
 
             type Giraffe implements Character {
+              id: String
               height: Height
             }
 
@@ -453,11 +457,13 @@ class TestRemoveDuplicates(unittest.TestCase):
             }
 
             type Human implements Character {
+              id: String
               name: String
               birthday: Date
             }
 
             type Giraffe implements Character {
+              id: String
               height: Height
             }
 
@@ -490,11 +496,13 @@ class TestRemoveDuplicates(unittest.TestCase):
             }
 
             type Human implements Character {
+              id: String
               name: String
               birthday: Date
             }
 
             type Giraffe implements Character {
+              id: String
               height: Height
             }
 

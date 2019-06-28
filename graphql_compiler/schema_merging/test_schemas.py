@@ -44,7 +44,7 @@ interface_schema = dedent('''\
     }
 
     type Human implements Character {
-      name: String
+      id: String
     }
 
     type SchemaQuery {
@@ -67,7 +67,8 @@ interfaces_schema = dedent('''\
     }
 
     type Human implements Character, Creature {
-      name: String
+      id: String
+      age: Int
     }
 
     type SchemaQuery {
@@ -121,6 +122,7 @@ list_schema = dedent('''\
     }
 
     type Droid implements Character {
+      id: String
       heights: [Height]
       dates: [Date]
       friends: [Droid]
@@ -182,11 +184,13 @@ various_types_schema = dedent('''\
     }
 
     type Human implements Character {
+      id: String
       name: String
       birthday: Date
     }
 
     type Giraffe implements Character {
+      id: String
       height: Height
     }
 
@@ -217,16 +221,28 @@ multiple_scalars_schema = dedent('''\
     }
 
     type Human implements Character {
+      id: String
       name: String
       birthday: Date
     }
 
     type Giraffe implements Character {
+      id: String
       height: Height
     }
 
     type SchemaQuery {
       Human: Human
       Giraffe: Giraffe
+    }
+''')
+
+invalid_schema = dedent('''\
+    schema {
+      query: SchemaQuery
+    }
+
+    type SchemaQuery {
+      Human: Human
     }
 ''')
