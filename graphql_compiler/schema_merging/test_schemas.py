@@ -145,7 +145,7 @@ list_schema = dedent('''\
     }
 ''')
 
-directives_schema = dedent('''\
+directive_schema = dedent('''\
     schema {
       query: SchemaQuery
     }
@@ -193,6 +193,8 @@ various_types_schema = dedent('''\
       id: String
       height: Height
     }
+
+    directive @stitch(source_field: String!, sink_field: String!) on FIELD_DEFINITION
 
     type SchemaQuery {
       Human: Human
