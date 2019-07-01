@@ -8,8 +8,6 @@ from graphql import parse
 
 # Unit tests for each step in _modify_schema
 
-# TODO: tests for name collisions between scalars and types, directives and types, etc
-# collision tests need to wait until I know what behavior I want for collision errors
 # TODO: NonNullType
 
 def get_dummy_schema():

@@ -1,3 +1,32 @@
+"""
+TODO: 
+
+Break apart renaming and merging completely. Perhaps clients already have their stuff renamed and
+    just want to merge.
+(Possibly) break the MergedSchema class into functions that do the stuff (the logic) and the output
+    strings and mapping (the result). Even if later the logic changes, can still use result; the
+    clients using the api don't need to know that the logic has changed even. Not everything has to
+    be a class, passing a MergedSchema along with all its code inside is no good (too fat).
+Change the RenameSchemaVisitor from bottom to top (child inspecting parent path) to top to bottom
+    (parent renames children on leave)
+Probably will need to separate out the RenameSchemaVisitor to a new file since it'll get very big.
+    Cover all available types, fail loudly for ones that shouldn't appear.
+Be very loud and clear about checking the validity of things.
+Design things so that it's impossible to be in a bad state. For example, instead of using bad list
+    of triples of (string, string, callable), move the callable out to the rename step, and use
+    an ordered dict so that it's impossible for the schema identifier to conflict.
+Split up the modify query type thing into parts: one for renaming the fields of any given type, one
+    for changing the name of the given type, one for turning it into an extension. Can stop doing
+    the dummy field stuff and just not apply the last step to the first schema.
+
+
+
+Look up the visit_and_rename function maybe? Seems like a typical visitor pattern.
+
+"""
+
+
+
 from graphql import build_ast_schema, extend_schema, parse
 from graphql.error import GraphQLError
 from graphql.language.visitor import Visitor, visit, BREAK
@@ -34,7 +63,17 @@ class MergedSchema(object):
             SchemaError if any schema contains extensions
             SchemaTypeConflictError if a renamed type in any schemas string causes a name conflict
         """
-        # input is rather inelegant, but that's alright for now
+        # NOTE: change the below to a dictionary where keys are schema_ids, and the contents are
+        # another dictionary of new names to old names? Makes sense for translating back queries
+        # as well. 
+        # Have a function for just renaming schemas. Takes in a schema string and a renamer
+        # function, outputs some object RenamedSchema that is a wrapper around the string, the
+        # {new_name: old_name} and {new_field: old_field} maps. Name of the query type untouched,
+        # but query fields are translated. 
+        # the scalars and directives sets would just be local fields in the function that merges
+        # schemas by taking in an ordereddict of schema name and RenamedSchemas, and outputs some
+        # kind of MergedSchema that's similar to a RenamedSchema but has the schema id field in
+        # its name/field maps
         self.reverse_name_id_map = {}  # dict mapping new name to (original name, schema id)
         self.reverse_root_field_id_map = {}  # dict mapping new field name to 
                                              # (original field name, schema id)
@@ -479,8 +518,6 @@ class GetSchemaDataVisitor(Visitor):
 
 
 
-# TODO: directives on types (how do those exist inside a schema?)
-# TODO: decide what do for checking name collisions among the 3 options
 # TODO: implement query demangling
 # TODO: look at code for splitting queries and see where the namespace fits in
 
