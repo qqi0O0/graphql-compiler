@@ -3,8 +3,7 @@ from graphql.language.ast import TypeExtensionDefinition
 from .types_util import SchemaData, SchemaError
 
 
-class RenameSchemaVisitor(Visitor):
-    """Used to traverse a Document AST, editing the names of nodes on the way."""
+class RenameVisitor(Visitor):
     def __init__(self, rename_func, query_type, scalar_types):
         self.rename_func = rename_func  # callable that takes string to string
         self.reverse_name_map = {}  # Dict[str, str], from new name to original name
@@ -12,79 +11,23 @@ class RenameSchemaVisitor(Visitor):
         self.scalar_types = scalar_types
         self.builtin_types = {'String', 'Int', 'Float', 'Boolean', 'ID'}
 
-    def _match_end_of_list(self, full_list, pattern):
-        """Check whether the end of full_list matches the pattern.
-
-        The list pattern may contain None, which matches against anything in the full_list.
-        If pattern is longer than the full_list, and some beginning element that lies outside the
-        full_list is not None, then the lists are considered to not match. 
-
-        Args:
-            full_list: list whose elements are int or str
-            pattern: list whose elements are int, str, or None
-
-        Return:
-            True if the end of full_list matches pattern, False otherwise
-        """
-        for back_index in range(1, len(pattern) + 1):
-            if pattern[-back_index] is not None:
-                if back_index > len(full_list) or full_list[-back_index] != pattern[-back_index]:
-                    return False
-        return True
-
-    def _need_rename(self, node, key, parent, path, ancestors):
-        """Check that the node should be renamed.
-
-        In particular, check that the node is not a builtin scalar type, and that the structure of
-        the path is so that the node should be renamed.
-
-        Args:
-            node: Name type (inheriting from Node type), the node that may be renamed
-            path: list of ints and strings, has the format of path in the argument of enter
-
-        Return:
-            True if the node should be renamed, False otherwise
-        """
-        # Path along may not be quite enough to know the structure for certain
-        name_string = node.value
-        if (
-            name_string in self.builtin_types or
-            name_string in self.scalar_types or
-            name_string == self.query_type
-        ):
-            return False
-        # InterfaceTypeDefinition, EnumTypeDefinition, or ObjectTypeDefinition
-        if self._match_end_of_list(path, ['definitions', None, 'name']):
-            return True
-        # Interface implemented by type, e.g. 'Character' in 'type Human implementing Character'
-        if self._match_end_of_list(path, ['interfaces', None, 'name']):
-            return True
-        # NamedType, e.g. 'Character' in 'friend: Character'
-        if self._match_end_of_list(path, ['type', 'name']):
-            return True
-        # Union, e.g. 'Human' in 'union HumanOrDroid = Human | Droid
-        if self._match_end_of_list(path, ['types', None, 'name']):
-            return True
-        # EnumValueDefinition, e.g. 'NEWHOPE' in 'Enum Episode { NEWHOPE }'
-        if self._match_end_of_list(path, ['values', None, 'name']):
-            return False
-        # InputValueDefinition, e.g. 'episode' in 'hero(episode: Episode): Character'
-        #                       e.g. 'source_field' in '@stitch(source_field: "a", sink_field: "b")'
-        if self._match_end_of_list(path, ['arguments', None, 'name']):
-            return False
-        # Directive, e.g. 'stitch' in '@stitch(source_field: "a", sink_field: "b")' on a field
-        if self._match_end_of_list(path, ['directives', None, 'name']):
-            return False
-        # FieldDefinition, e.g. 'friend' in 'friend: Character'
-        # fields of the query type will be renamed later
-        if self._match_end_of_list(path, ['fields', None, 'name']):
-            return False
-        # TODO: any missing cases
-        raise AssertionError("Incomplete!\nPath: {}\n\nNode: {}".format(path, node))
-
     def _rename_name_add_to_record(self, node):
-        """Rename the value of the node, and add the name mapping to reverse_name_map."""
+        """Rename the value of the node, and add the name mapping to reverse_name_map.
+
+        Don't rename if the type is the query type, a scalar type, or a built in type.
+
+        Args:
+            node: Name type Node
+        """
         name_string = node.value
+
+        if (
+            name_string == self.query_type or
+            name_string in self.scalar_types or
+            name_string in self.builtin_types
+        ):
+            return
+
         new_name_string = self.rename_func(name_string)
         node.value = new_name_string
         if (
@@ -111,21 +54,133 @@ class RenameSchemaVisitor(Visitor):
 
         self.reverse_name_map[new_name_string] = name_string
 
-    def _skip_branch(self, node, *args):
-        """Do not traverse down the current node."""
+
+class RenameSchemaVisitor(RenameVisitor):
+    """Traverse a Document AST, editing the names of nodes."""
+    # In order of QUERY_DOCUMENT_KEYS
+    # returning False means skip branch
+
+    def enter_Name(self, node, *args):
+        pass
+
+    def enter_Document(self, node, *args):
+        pass
+
+    def enter_OperationDefinition(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_VariableDefinition(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_Variable(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_SelectionSet(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_Field(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_Argument(self, node, *args):
+        # argument of directive
         return False
 
-    # Methods named enter_TYPENAME will be called on a node of TYPENAME upon entering it in
-    # traversal. Similarly, methods named leave_TYPENAME will be called upon leaving a node.
-    # For a complete list of possibilities for TYPENAME, see QUERY_DOCUMENT_KEYS in file
-    # graphql/language/visitor_meta.py
+    def enter_FragmentSpread(self, node, *args):
+        raise AssertionError('Unimplemented')
 
-    def enter_Name(self, node, key, parent, path, ancestors):
-        """If structure of node satisfies requirements, rename node."""
-        if self._need_rename(node, key, parent, path, ancestors):
-            self._rename_name_add_to_record(node)
+    def enter_InlineFragment(self, node, *args):
+        raise AssertionError('Unimplemented')
 
-    enter_ScalarTypeDefinition = enter_DirectiveDefinition = _skip_branch
+    def enter_FragmentDefinition(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_IntValue(self, node, *args):
+        return False
+
+    def enter_FloatValue(self, node, *args):
+        return False
+
+    def enter_StringValue(self, node, *args):
+        return False
+
+    def enter_BooleanValue(self, node, *args):
+        return False
+
+    def enter_EnumValue(self, node, *args):
+        return False
+
+    def enter_ListValue(self, node, *args):
+        pass
+
+    def enter_ObjectValue(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_ObjectField(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_Directive(self, node, *args):
+        raise AssertionError('Unimplemented')  # TODO
+
+    def enter_NamedType(self, node, *args):
+        """Rename all named types that are not the query type, scalars, or builtins."""
+        self._rename_name_add_to_record(node.name)
+
+    def enter_ListType(self, node, *args):
+        pass
+
+    def enter_NonNullType(self, node, *args):
+        pass
+
+    def enter_SchemaDefinition(self, node, *args):
+        pass
+
+    def enter_OperationTypeDefinition(self, node, *args):
+        return False
+
+    def enter_ScalarTypeDefinition(self, node, *args):
+        pass
+
+    def enter_ObjectTypeDefinition(self, node, *args):
+        # NamedType takes care of interfaces, FieldDefinition takes care of fields
+        # NOTE: directives
+        self._rename_name_add_to_record(node.name)
+
+    def enter_FieldDefinition(self, node, *args):
+        # No rename name, InputValueDefinition takes care of arguments, NamedType cares care of type
+        # NOTE: directives
+        pass
+
+    def enter_InputValueDefinition(self, node, *args):
+        # No rename name, NamedType takes care of type, no rename default_value
+        # NOTE: directives
+        pass
+
+    def enter_InterfaceTypeDefinition(self, node, *args):
+        # FieldDefinition takes care of fields
+        # NOTE: directives
+        self._rename_name_add_to_record(node.name)
+
+    def enter_UnionTypeDefinition(self, node, *args):
+        # NamedType takes care of types
+        # NOTE: directives
+        self._rename_name_add_to_record(node.name)
+
+    def enter_EnumTypeDefinition(self, node, *args):
+        # EnumValueDefinition takes care of values
+        # NOTE: directives
+        self._rename_name_add_to_record(node.name)
+
+    def enter_EnumValueDefinition(self, node, *args):
+        pass
+
+    def enter_InputObjectTypeDefinition(self, node, *args):
+        raise AssertionError('Unimplemented')
+
+    def enter_TypeExtensionDefinition(self, node, *args):
+        raise SchemaError('Extension definition not allowed')
+
+    def enter_directive_definition(self, node, *args):
+        pass
 
 
 class RenameRootFieldsVisitor(Visitor):
