@@ -177,7 +177,7 @@ class MergedSchema(object):
         self.merged_schema = None  # type: Document
 
         # TODO: Later on, also check the definitions of directives don't conflict
-        self._check_validity(schemas_info.values())
+        self._check_no_conflict(schemas_info.values())
 
         for schema_identifier, renamed_schema in six.iteritems(schemas_info):
             self._merge_schema(schema_identifier, renamed_schema)
@@ -191,7 +191,7 @@ class MergedSchema(object):
             schema_identifier: string
 
         Raises:
-            SchemaError if a type in query string cannot be found in the schema that
+            SchemaError if a type or root field in query string cannot be found in the schema that
                 schema_identifier points to
 
         Returns:
@@ -206,7 +206,7 @@ class MergedSchema(object):
         visitor = DemangleQueryVisitor(self.reverse_name_id_map, self.reverse_root_field_id_map,
                                        schema_identifier)
         visit(ast, visitor)
-        pass
+        return print_ast(ast)
 
     def get_original_type(self, new_name, schema_identifier):
         """Get the original name of the input object renamed name.
@@ -238,7 +238,7 @@ class MergedSchema(object):
         """Return a string describing the merged schema in GraphQL Schema Language."""
         return print_ast(self.merged_schema)
 
-    def _check_validity(self, renamed_schemas):
+    def _check_no_conflict(self, renamed_schemas):
         """Check the input schemas don't contain name clashes.
 
         Args:

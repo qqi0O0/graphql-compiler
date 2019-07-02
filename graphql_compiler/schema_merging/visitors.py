@@ -20,6 +20,10 @@ class RenameSchemaVisitor(Visitor):
 
         Args:
             node: Name type Node
+
+        Raises:
+            SchemaError if the newly renamed node causes name conflicts with existing types,
+                scalars, or builtin types
         """
         name_string = node.value
 
@@ -57,7 +61,6 @@ class RenameSchemaVisitor(Visitor):
         self.reverse_name_map[new_name_string] = name_string
 
     # In order of QUERY_DOCUMENT_KEYS
-    # returning False means skip branch
 
     def enter_Name(self, node, *args):
         pass
@@ -66,7 +69,7 @@ class RenameSchemaVisitor(Visitor):
         pass
 
     def enter_OperationDefinition(self, node, *args):
-        raise AssertionError('Unimplemented')
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('OperationDefinition')) 
 
     def enter_VariableDefinition(self, node, *args):
         raise AssertionError('Unimplemented')
@@ -75,38 +78,38 @@ class RenameSchemaVisitor(Visitor):
         raise AssertionError('Unimplemented')
 
     def enter_SelectionSet(self, node, *args):
-        raise AssertionError('Unimplemented')
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('SelectionSet')) 
 
     def enter_Field(self, node, *args):
-        raise AssertionError('Unimplemented')
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('Field')) 
 
     def enter_Argument(self, node, *args):
         # argument of directive
-        return False
+        pass
 
     def enter_FragmentSpread(self, node, *args):
-        raise AssertionError('Unimplemented')
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentSpread')) 
 
     def enter_InlineFragment(self, node, *args):
-        raise AssertionError('Unimplemented')
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('InlineFragment')) 
 
     def enter_FragmentDefinition(self, node, *args):
-        raise AssertionError('Unimplemented')
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentDefinition')) 
 
     def enter_IntValue(self, node, *args):
-        return False
+        pass
 
     def enter_FloatValue(self, node, *args):
-        return False
+        pass
 
     def enter_StringValue(self, node, *args):
-        return False
+        pass
 
     def enter_BooleanValue(self, node, *args):
-        return False
+        pass
 
     def enter_EnumValue(self, node, *args):
-        return False
+        pass
 
     def enter_ListValue(self, node, *args):
         pass
@@ -120,7 +123,6 @@ class RenameSchemaVisitor(Visitor):
     def enter_Directive(self, node, *args):
         # TODO: behavior is not clear
         pass
-        # raise AssertionError('Unimplemented')
 
     def enter_NamedType(self, node, *args):
         """Rename all named types that are not the query type, scalars, or builtins."""
@@ -136,7 +138,7 @@ class RenameSchemaVisitor(Visitor):
         pass
 
     def enter_OperationTypeDefinition(self, node, *args):
-        return False
+        pass
 
     def enter_ScalarTypeDefinition(self, node, *args):
         pass
@@ -248,27 +250,12 @@ class GetSchemaDataVisitor(Visitor):
         if node.operation == 'query':  # might add mutation and subscription options
             self.schema_data.query_type = node.type.name.value
 
-#    def enter_InterfaceTypeDefinition(self, node, *args):
-#        self.schema_data.types.add(node.name.value)
-
-#    def enter_ObjectTypeDefinition(self, node, *args):
-#        self.schema_data.types.add(node.name.value)
-
-#    def enter_UnionTypeDefinition(self, node, *args):
-#        self.schema_data.types.add(node.name.value)
-
-#    def enter_EnumTypeDefinition(self, node, *args):
-#        self.schema_data.types.add(node.name.value)
-
     def enter_ScalarTypeDefinition(self, node, *args):
         self.schema_data.scalars.add(node.name.value)
 
     def enter_DirectiveDefinition(self, node, *args):
-        # NOTE: currently we don't check if the definitions of the directives agree
-        # any directive that comes after one of the same one is simply erased, even if it
-        # has a different definition
-        # In fact, only the directives of the first schema are kept, due to the behavior of
-        # extend_schema
+        # NOTE: currently we don't check if the definitions of the directives agree.
+        # Any directive that comes after one of the same one is simply erased
         self.schema_data.directives.add(node.name.value)
 
 
@@ -292,4 +279,7 @@ class DemangleQueryVisitor(Visitor):
     def __init__(self, reverse_name_id_map, reverse_root_field_id_map, schema_identifier):
         pass
 
-
+    # Want to rename two things: the first level selection set field names (root fields)
+    # and NamedTypes (e.g. in fragments)
+    # Should do those in two steps
+    # TODO

@@ -7,8 +7,6 @@ from graphql.language.printer import print_ast
 from graphql import parse
 
 
-# TODO: NonNull type
-
 class TestRenameSchema(unittest.TestCase):
     def test_no_rename(self):
         renamed_schema = RenamedSchema(basic_schema)
@@ -209,6 +207,26 @@ class TestRenameSchema(unittest.TestCase):
                          renamed_schema.reverse_name_map)
         self.assertEqual({'NewDroid': 'Droid'},
                          renamed_schema.reverse_root_field_map)
+
+    def test_non_null_rename(self):
+        renamed_schema = RenamedSchema(non_null_schema, lambda name: 'New' + name)
+        renamed_schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type NewHuman {
+              id: String!
+              friend: NewHuman!
+            }
+
+            type SchemaQuery {
+              NewHuman: NewHuman!
+            }
+        ''')
+        self.assertEqual(renamed_schema_string, renamed_schema.schema_string)
+        self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_name_map)
+        self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_root_field_map)
 
     def test_directive_rename(self):
         renamed_schema = RenamedSchema(directive_schema, lambda name: 'New' + name)

@@ -145,6 +145,21 @@ list_schema = dedent('''\
     }
 ''')
 
+non_null_schema = dedent('''\
+    schema {
+      query: SchemaQuery
+    }
+
+    type Human {
+      id: String!
+      friend: Human!
+    }
+
+    type SchemaQuery {
+      Human: Human!
+    }
+''')
+
 directive_schema = dedent('''\
     schema {
       query: SchemaQuery
