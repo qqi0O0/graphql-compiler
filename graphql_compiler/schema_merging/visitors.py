@@ -1,9 +1,11 @@
 from graphql.language.visitor import Visitor, visit
+from graphql.language import ast
 from graphql.language.ast import TypeExtensionDefinition
 from .types_util import SchemaData, SchemaError
 
 
-class RenameVisitor(Visitor):
+class RenameSchemaVisitor(Visitor):
+    """Traverse a Document AST, editing the names of nodes."""
     def __init__(self, rename_func, query_type, scalar_types):
         self.rename_func = rename_func  # callable that takes string to string
         self.reverse_name_map = {}  # Dict[str, str], from new name to original name
@@ -35,28 +37,25 @@ class RenameVisitor(Visitor):
             self.reverse_name_map[new_name_string] != name_string
         ):
             raise SchemaError(
-                '{} and {} are both renamed to {}'.format(
+                '"{}" and "{}" are both renamed to "{}"'.format(
                     name_string, self.reverse_name_map[new_name_string], new_name_string
                 )
             )
         if new_name_string in self.scalar_types:
             raise SchemaError(
-                '{} was renamed to {}, clashing with scalar {}'.format(
+                '"{}" was renamed to "{}", clashing with scalar "{}"'.format(
                     name_string, new_name_string, new_name_string
                 )
             )
         if new_name_string in self.builtin_types:
             raise SchemaError(
-                '{} was renamed to {}, clashing with builtin {}'.format(
+                '"{}" was renamed to "{}", clashing with builtin "{}"'.format(
                     name_string, new_name_string, new_name_string
                 )
             )
 
         self.reverse_name_map[new_name_string] = name_string
 
-
-class RenameSchemaVisitor(RenameVisitor):
-    """Traverse a Document AST, editing the names of nodes."""
     # In order of QUERY_DOCUMENT_KEYS
     # returning False means skip branch
 
@@ -119,7 +118,9 @@ class RenameSchemaVisitor(RenameVisitor):
         raise AssertionError('Unimplemented')
 
     def enter_Directive(self, node, *args):
-        raise AssertionError('Unimplemented')  # TODO
+        # TODO: behavior is not clear
+        pass
+        # raise AssertionError('Unimplemented')
 
     def enter_NamedType(self, node, *args):
         """Rename all named types that are not the query type, scalars, or builtins."""
@@ -218,26 +219,6 @@ class RenameRootFieldsVisitor(Visitor):
             self.reverse_field_map[new_field_name] = field_name
 
 
-class ModifyQueryTypeVisitor(Visitor):
-    """Rename query type and change to extension."""
-    def __init__(self, cur_query_type_name, target_query_type_name, change_to_extension):
-        self.cur_query_type_name = cur_query_type_name
-        self.target_query_type_name = target_query_type_name
-        self.change_to_extension = change_to_extension
-
-    def enter_OperationTypeDefinition(self, node, *args):
-        """If entering query definition, rename query type."""
-        node.type.name.value = self.target_query_type_name
-
-    def enter_ObjectTypeDefinition(self, node, key, parent, path, ancestors):
-        """If entering query type, rename query type, optionally change to extension."""
-        if node.name.value == self.cur_query_type_name:
-            node.name.value = self.target_query_type_name
-            if self.change_to_extension:
-                new_node = TypeExtensionDefinition(definition = node)
-                parent[key] = new_node
-
-
 class RemoveDuplicatesVisitor(Visitor):
     """Remove repeated scalar or directive definitions."""
     def __init__(self, existing_scalars, existing_directives):
@@ -267,6 +248,18 @@ class GetSchemaDataVisitor(Visitor):
         if node.operation == 'query':  # might add mutation and subscription options
             self.schema_data.query_type = node.type.name.value
 
+#    def enter_InterfaceTypeDefinition(self, node, *args):
+#        self.schema_data.types.add(node.name.value)
+
+#    def enter_ObjectTypeDefinition(self, node, *args):
+#        self.schema_data.types.add(node.name.value)
+
+#    def enter_UnionTypeDefinition(self, node, *args):
+#        self.schema_data.types.add(node.name.value)
+
+#    def enter_EnumTypeDefinition(self, node, *args):
+#        self.schema_data.types.add(node.name.value)
+
     def enter_ScalarTypeDefinition(self, node, *args):
         self.schema_data.scalars.add(node.name.value)
 
@@ -274,6 +267,8 @@ class GetSchemaDataVisitor(Visitor):
         # NOTE: currently we don't check if the definitions of the directives agree
         # any directive that comes after one of the same one is simply erased, even if it
         # has a different definition
+        # In fact, only the directives of the first schema are kept, due to the behavior of
+        # extend_schema
         self.schema_data.directives.add(node.name.value)
 
 
@@ -291,4 +286,10 @@ def get_schema_data(ast):
     get_schema_data_visitor = GetSchemaDataVisitor()
     visit(ast, get_schema_data_visitor)
     return get_schema_data_visitor.schema_data
+
+
+class DemangleQueryVisitor(Visitor):
+    def __init__(self, reverse_name_id_map, reverse_root_field_id_map, schema_identifier):
+        pass
+
 
