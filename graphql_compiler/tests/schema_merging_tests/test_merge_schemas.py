@@ -1,3 +1,4 @@
+# Copyright 2019-present Kensho Technologies, LLC.
 from collections import OrderedDict
 from textwrap import dedent
 import unittest

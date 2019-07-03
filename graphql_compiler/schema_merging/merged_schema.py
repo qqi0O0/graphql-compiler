@@ -1,3 +1,4 @@
+# Copyright 2019-present Kensho Technologies, LLC.
 """TODO:
 
 (Possibly) break the MergedSchema class into functions that do the stuff (the logic) and the output
@@ -12,6 +13,7 @@ Always add in the stitch directive as a special case for now
 """
 
 
+from collections import namedtuple
 import copy
 
 from graphql import parse
@@ -23,6 +25,8 @@ import six
 from .merge_schema_asts import merge_schema_asts
 from .utils import SchemaError, get_schema_data
 
+
+# Change MergedSchema to a lightweight namedtuple, and have a function produce it
 
 class MergedSchema(object):
     # TODO: use helpers in compiler like merge_disjoint_dict -- fail on assertions easier to
