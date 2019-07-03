@@ -4,14 +4,15 @@ import unittest
 from graphql import parse
 from graphql.language.printer import print_ast
 
-from .merge_schema_asts import merge_schema_asts
-from .test_schemas import *
+from graphql_compiler.schema_merging.merge_schema_asts import merge_schema_asts
+
+from .input_schema_strings import InputSchemaStrings as ISS
 
 
 class TestMergeSchemaASTs(unittest.TestCase):
     def test_no_conflict_merge(self):
-        ast1 = parse(basic_schema)
-        ast2 = parse(enum_schema)
+        ast1 = parse(ISS.basic_schema)
+        ast2 = parse(ISS.enum_schema)
         merged_schema = dedent('''\
             schema {
               query: SchemaQuery
