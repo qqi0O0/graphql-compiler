@@ -140,7 +140,7 @@ class TestMergeSchemas(unittest.TestCase):
             schema {
               query: SchemaQuery
             }
-            
+
             type SchemaQuery {
               IntQuery: Int
             }
@@ -162,7 +162,7 @@ class TestMergeSchemas(unittest.TestCase):
             schema {
               query: SchemaQuery
             }
-            
+
             type SchemaQuery {
               IntQuery: Int
             }
@@ -185,7 +185,7 @@ class TestMergeSchemas(unittest.TestCase):
             schema {
               query: SchemaQuery
             }
-            
+
             type SchemaQuery {
               IntQuery: Int
             }
@@ -208,7 +208,7 @@ class TestMergeSchemas(unittest.TestCase):
             schema {
               query: SchemaQuery
             }
-            
+
             type SchemaQuery {
               IntQuery: Int
             }
@@ -228,7 +228,7 @@ class TestMergeSchemas(unittest.TestCase):
             schema {
               query: SchemaQuery
             }
-            
+
             type SchemaQuery {
               IntQuery: Int
             }
@@ -248,7 +248,7 @@ class TestMergeSchemas(unittest.TestCase):
             schema {
               query: SchemaQuery
             }
-            
+
             type SchemaQuery {
               IntQuery: Int
             }

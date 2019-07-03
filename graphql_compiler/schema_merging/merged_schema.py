@@ -12,15 +12,14 @@ Always add in the stitch directive as a special case for now
 """
 
 
-from collections import OrderedDict
-
-from graphql import build_ast_schema, parse
+from graphql import parse
+from graphql.language import ast as ast_classes
 from graphql.language.printer import print_ast
 from graphql.language.visitor import Visitor, visit
 import six
 
 from .merge_schema_asts import merge_schema_asts
-from .utils import SchemaData, SchemaError, get_schema_data
+from .utils import SchemaError, get_schema_data
 
 
 class MergedSchema(object):
@@ -52,8 +51,7 @@ class MergedSchema(object):
             raise ValueError('Received 0 schemas to merge')
 
         self.reverse_name_id_map = {}  # dict mapping new name to (original name, schema id)
-        self.reverse_root_field_id_map = {}  # dict mapping new field name to
-                                             # (original field name, schema id)
+        self.reverse_root_field_id_map = {}  # dict mapping new field to (original name, schema id)
         self.merged_schema = None  # type: Document
 
         # TODO: Later on, also check the definitions of directives don't conflict
@@ -102,7 +100,7 @@ class MergedSchema(object):
         Returns:
             string, the original name of the type
         """
-        if not new_name in self.reverse_name_id_map:
+        if new_name not in self.reverse_name_id_map:
             raise SchemaError('Type "{}" not found.'.format(new_name))
         old_name, recorded_schema_identifier = self.reverse_name_id_map[new_name]
         if schema_identifier != recorded_schema_identifier:
@@ -163,27 +161,24 @@ class MergedSchema(object):
             self.reverse_root_field_id_map[new_name] = (original_name, schema_identifier)
 
     def _remove_duplicates(self, ast):
-        """Remove any scalars already defined from the ast."""
+        """Remove any scalars or directives already defined from the ast."""
         schema_data = get_schema_data(self.merged_schema)
-        visitor = RemoveDuplicatesVisitor(schema_data.scalars, schema_data.directives)
-        visit(ast, visitor)
 
+        filtered_definitions = []
+        for definition in ast.definitions:
+            if (
+                isinstance(definition, ast_classes.ScalarTypeDefinition) and
+                definition.name.value in schema_data.scalars
+            ):
+                continue
+            if (
+                isinstance(definition, ast_classes.DirectiveDefinition) and
+                definition.name.value in schema_data.directives
+            ):
+                continue
+            filtered_definitions.append(definition)
 
-class RemoveDuplicatesVisitor(Visitor):
-    """Remove repeated scalar or directive definitions."""
-    def __init__(self, existing_scalars, existing_directives):
-        self.existing_scalars = existing_scalars
-        self.existing_directives = existing_directives
-
-    def enter_ScalarTypeDefinition(self, node, key, parent, path, ancestors):
-        """If scalar has already been defined, remove it from the ast."""
-        if node.name.value in self.existing_scalars:
-            parent[key] = None
-
-    def enter_DirectiveDefinition(self, node, key, parent, path, ancestors):
-        """If directive has already been defined, remove it from the ast."""
-        if node.name.value in self.existing_directives:
-            parent[key] = None
+        ast.definitions = filtered_definitions  # is this ok? need to copy contents instead?
 
 
 class DemangleQueryVisitor(Visitor):
@@ -194,14 +189,12 @@ class DemangleQueryVisitor(Visitor):
     # and NamedTypes (e.g. in fragments)
     # Should do those in two steps
     # TODO
-
-
+    # First step doesn't need visitor. Just iterate over selection set like with dedup
+    # Second step uses very simple visitor that transforms all NamedTypes that are not scalars
+    # or builtins? 
 
 
 # TODO: implement query demangling
 # TODO: look at code for splitting queries and see where the namespace fits in
-
 # TODO: provide rename only on collision as an option
-
-
-# TODO: cross server edge descriptor?
+# TODO: cross server edge descriptor

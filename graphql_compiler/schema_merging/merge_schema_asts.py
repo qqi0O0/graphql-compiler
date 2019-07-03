@@ -58,9 +58,9 @@ def merge_schema_asts(ast1, ast2):
         ):
             merged_query_type = definition
             break
-    if merged_query_type == None:
+    if merged_query_type is None:
         raise Exception('Query type not found.')
-    if new_root_fields == None:
+    if new_root_fields is None:
         raise Exception('Root fields not found.')
     for new_root_field in new_root_fields:
         merged_query_type.fields.append(new_root_field)
