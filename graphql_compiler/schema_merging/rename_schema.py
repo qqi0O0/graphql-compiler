@@ -1,16 +1,16 @@
 from collections import namedtuple
+
 from graphql import build_ast_schema, parse
-from graphql.language.printer import print_ast
 from graphql.language.visitor import Visitor, visit
 
 from .utils import SchemaError, get_schema_data
 
 
 RenamedSchema = namedtuple(
-    'RenamedSchema',
-    ['schema_ast',  # type: Document, ast representing the renamed schema
-     'reverse_name_map',  # type: Dict[str, str], maps new type name to old type name
-     'reverse_root_field_map'  # type: Dict[str, str], maps new root field name to old root field
+    'RenamedSchema', [
+        'schema_ast',  # type: Document, ast representing the renamed schema
+        'reverse_name_map',  # type: Dict[str, str], new type name to old type name
+        'reverse_root_field_map'  # type: Dict[str, str], new root field name to old root field
     ]
 )
 
@@ -53,18 +53,17 @@ def rename_schema(schema_string, rename_func=lambda name: name):
                          reverse_root_field_map=reverse_root_field_map)
 
 
-def _rename_types(ast, rename_func, query_type_name, scalars):
-    """Rename types, enums, interfaces, and more using rename_func.
+def _rename_types(ast, rename_func, query_type, scalars):
+    """Rename types, enums, interfaces using rename_func.
 
-    Types, interfaces, enum definitions will be renamed. The query type will not be renamed.
-    Scalar types, field names, enum values will not be renamed.
+    The query type will not be renamed. Scalar types, field names, enum values will not be renamed.
 
     ast will be modified as a result.
 
     Args:
         ast: Document, the schema ast that we modify
         rename_func: callable, used to rename types, interfaces, enums, etc
-        query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
+        query_type: string, name of the query type, e.g. 'RootSchemaQuery'
         scalars: set of strings, the set of user defined scalars
 
     Returns:
@@ -73,13 +72,13 @@ def _rename_types(ast, rename_func, query_type_name, scalars):
     Raises:
         SchemaError if the rename causes name conflicts
     """
-    visitor = RenameSchemaVisitor(rename_func, query_type_name, scalars)
+    visitor = RenameSchemaVisitor(rename_func, query_type, scalars)
     visit(ast, visitor)
 
     return visitor.reverse_name_map
 
 
-def _rename_root_fields(ast, rename_func, query_type_name):
+def _rename_root_fields(ast, rename_func, query_type):
     """Rename root fields, aka fields of the query type.
 
     ast will be modified as a result.
@@ -87,7 +86,7 @@ def _rename_root_fields(ast, rename_func, query_type_name):
     Args:
         ast: Document, the schema ast that we modify
         rename_func: callable, used to rename fields of the query type
-        query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
+        query_type: string, name of the query type, e.g. 'RootSchemaQuery'
 
     Returns:
         Dict[str, str], the new root field name to original root field name map
@@ -95,7 +94,7 @@ def _rename_root_fields(ast, rename_func, query_type_name):
     Raises:
         SchemaError if rename causes root field name conflicts
     """
-    visitor = RenameRootFieldsVisitor(rename_func, query_type_name)
+    visitor = RenameRootFieldsVisitor(rename_func, query_type)
     visit(ast, visitor)
 
     return visitor.reverse_field_map
@@ -189,28 +188,27 @@ class RenameSchemaVisitor(Visitor):
         elif node_type == 'TypeExtensionDefinition':
             raise SchemaError('Extension definition not allowed')
         else:
-            # Currently: VariableDefinition, Variable, ObjectValue, ObjectField, 
-            # InputObjectTypeDefinition
+            # VariableDefinition, Variable, ObjectValue, ObjectField, InputObjectTypeDefinition
             # The above types I'm not sure what to do about
             # TODO
             raise AssertionError('Missed type: "{}"'.format(node_type))
 
 
 class RenameRootFieldsVisitor(Visitor):
-    def __init__(self, rename_func, query_type_name):
+    def __init__(self, rename_func, query_type):
         self.in_query_type = False
         self.reverse_field_map = {}
         self.rename_func = rename_func
-        self.query_type_name = query_type_name
+        self.query_type = query_type
 
     def enter_ObjectTypeDefinition(self, node, *args):
         """If entering query type, set flag to True."""
-        if node.name.value == self.query_type_name:
+        if node.name.value == self.query_type:
             self.in_query_type = True
 
     def leave_ObjectTypeDefinition(self, node, key, parent, path, ancestors):
         """If leaving query type, set flag to False."""
-        if node.name.value == self.query_type_name:
+        if node.name.value == self.query_type:
             self.in_query_type = False
 
     def enter_FieldDefinition(self, node, *args):

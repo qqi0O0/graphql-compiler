@@ -3,7 +3,7 @@ from textwrap import dedent
 import unittest
 
 from graphql_compiler.schema_merging.merged_schema import MergedSchema
-from graphql_compiler.schema_merging.renamed_schema import rename_schema
+from graphql_compiler.schema_merging.rename_schema import rename_schema
 from graphql_compiler.schema_merging.utils import SchemaError
 
 from .input_schema_strings import InputSchemaStrings as ISS

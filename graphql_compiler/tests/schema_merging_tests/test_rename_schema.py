@@ -2,12 +2,12 @@ from textwrap import dedent
 import unittest
 
 from graphql.language.printer import print_ast
-from graphql_compiler.schema_merging.renamed_schema import rename_schema 
+
+from graphql_compiler.schema_merging.rename_schema import rename_schema
 from graphql_compiler.schema_merging.utils import SchemaError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
-# TODO: illegal input containing extensions
 
 class TestRenameSchema(unittest.TestCase):
     def test_no_rename(self):

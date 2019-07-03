@@ -13,6 +13,7 @@ Always add in the stitch directive as a special case for now
 
 
 import copy
+
 from graphql import parse
 from graphql.language import ast as ast_classes
 from graphql.language.printer import print_ast
@@ -192,7 +193,7 @@ class DemangleQueryVisitor(Visitor):
     # TODO
     # First step doesn't need visitor. Just iterate over selection set like with dedup
     # Second step uses very simple visitor that transforms all NamedTypes that are not scalars
-    # or builtins? 
+    # or builtins?
 
 
 # TODO: implement query demangling

@@ -1,4 +1,5 @@
 from collections import namedtuple
+
 from graphql.language.visitor import Visitor, visit
 
 
@@ -16,6 +17,7 @@ class GetSchemaDataVisitor(Visitor):
         self.scalars = set()  # Set[str], names of scalar types
         self.directives = set()  # Set[str], names of directives
         self.has_extension = False
+        self.schema_data = None
 
     def enter_TypeExtensionDefinition(self, node, *args):
         self.has_extension = True
