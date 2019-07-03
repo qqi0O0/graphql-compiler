@@ -12,6 +12,7 @@ Always add in the stitch directive as a special case for now
 """
 
 
+import copy
 from graphql import parse
 from graphql.language import ast as ast_classes
 from graphql.language.printer import print_ast
@@ -134,7 +135,7 @@ class MergedSchema(object):
                     new_names.intersection(renamed_schema.reverse_name_map.keys())
                 ))
             new_names.update(renamed_schema.reverse_name_map.keys())
-            schema_data = get_schema_data(parse(renamed_schema.schema_string))
+            schema_data = get_schema_data(renamed_schema.schema_ast)
             scalars.update(schema_data.scalars)
         if not new_names.isdisjoint(scalars):
             raise SchemaError('{} defined more than once'.format(
@@ -148,7 +149,7 @@ class MergedSchema(object):
             schema_identifier: string
             renamed_schema: RenamedSchema
         """
-        ast = parse(renamed_schema.schema_string)
+        ast = copy.deepcopy(renamed_schema.schema_ast)
         if self.merged_schema is None:  # first schema
             self.merged_schema = ast
         else:

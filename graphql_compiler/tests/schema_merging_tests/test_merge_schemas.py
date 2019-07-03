@@ -3,7 +3,7 @@ from textwrap import dedent
 import unittest
 
 from graphql_compiler.schema_merging.merged_schema import MergedSchema
-from graphql_compiler.schema_merging.renamed_schema import RenamedSchema
+from graphql_compiler.schema_merging.renamed_schema import rename_schema
 from graphql_compiler.schema_merging.utils import SchemaError
 
 from .input_schema_strings import InputSchemaStrings as ISS
@@ -13,8 +13,8 @@ class TestMergeSchemas(unittest.TestCase):
     def test_no_rename_basic_merge(self):
         merged_schema = MergedSchema(
             OrderedDict({
-                'basic': RenamedSchema(ISS.basic_schema),
-                'enum': RenamedSchema(ISS.enum_schema)
+                'basic': rename_schema(ISS.basic_schema),
+                'enum': rename_schema(ISS.enum_schema)
             })
         )
         merged_schema_string = dedent('''\
@@ -50,8 +50,8 @@ class TestMergeSchemas(unittest.TestCase):
     def test_rename_basic_merge(self):
         merged_schema = MergedSchema(
             OrderedDict({
-                'first': RenamedSchema(ISS.basic_schema, lambda name: 'First' + name),
-                'second': RenamedSchema(ISS.basic_schema, lambda name: 'Second' + name)
+                'first': rename_schema(ISS.basic_schema, lambda name: 'First' + name),
+                'second': rename_schema(ISS.basic_schema, lambda name: 'Second' + name)
             })
         )
         merged_schema_string = dedent('''\
@@ -94,8 +94,8 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         merged_schema = MergedSchema(
             OrderedDict({
-                'first': RenamedSchema(ISS.basic_schema),
-                'second': RenamedSchema(diff_query_type_schema)
+                'first': rename_schema(ISS.basic_schema),
+                'second': rename_schema(diff_query_type_schema)
             })
         )
         merged_schema_string = dedent('''\
@@ -122,7 +122,7 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'invalid': RenamedSchema(ISS.invalid_schema)
+                    'invalid': rename_schema(ISS.invalid_schema)
                 })
             )
 
@@ -130,8 +130,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'first': RenamedSchema(ISS.basic_schema),
-                    'second': RenamedSchema(ISS.basic_schema)
+                    'first': rename_schema(ISS.basic_schema),
+                    'second': rename_schema(ISS.basic_schema)
                 })
             )
 
@@ -152,8 +152,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'basic': RenamedSchema(ISS.basic_schema),
-                    'bad': RenamedSchema(interface_conflict_schema)
+                    'basic': rename_schema(ISS.basic_schema),
+                    'bad': rename_schema(interface_conflict_schema)
                 })
             )
 
@@ -175,8 +175,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'basic': RenamedSchema(ISS.basic_schema),
-                    'bad': RenamedSchema(enum_conflict_schema)
+                    'basic': rename_schema(ISS.basic_schema),
+                    'bad': rename_schema(enum_conflict_schema)
                 })
             )
 
@@ -198,8 +198,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'interface': RenamedSchema(ISS.interface_schema),
-                    'bad': RenamedSchema(enum_conflict_schema)
+                    'interface': rename_schema(ISS.interface_schema),
+                    'bad': rename_schema(enum_conflict_schema)
                 })
             )
 
@@ -218,8 +218,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'basic': RenamedSchema(ISS.basic_schema),
-                    'bad': RenamedSchema(scalar_conflict_schema)
+                    'basic': rename_schema(ISS.basic_schema),
+                    'bad': rename_schema(scalar_conflict_schema)
                 })
             )
 
@@ -238,8 +238,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'interface': RenamedSchema(ISS.interface_schema),
-                    'bad': RenamedSchema(scalar_conflict_schema)
+                    'interface': rename_schema(ISS.interface_schema),
+                    'bad': rename_schema(scalar_conflict_schema)
                 })
             )
 
@@ -258,8 +258,8 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'enum': RenamedSchema(ISS.enum_schema),
-                    'bad': RenamedSchema(scalar_conflict_schema)
+                    'enum': rename_schema(ISS.enum_schema),
+                    'bad': rename_schema(scalar_conflict_schema)
                 })
             )
 
@@ -267,7 +267,7 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaError):
             MergedSchema(
                 OrderedDict({
-                    'invalid': RenamedSchema(ISS.basic_schema, lambda name: 'String'),
+                    'invalid': rename_schema(ISS.basic_schema, lambda name: 'String'),
                 })
             )
 
@@ -291,8 +291,8 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         merged_schema = MergedSchema(
             OrderedDict({
-                'first': RenamedSchema(ISS.scalar_schema, lambda name: 'First' + name),
-                'second': RenamedSchema(extra_scalar_schema, lambda name: 'Second' + name)
+                'first': rename_schema(ISS.scalar_schema, lambda name: 'First' + name),
+                'second': rename_schema(extra_scalar_schema, lambda name: 'Second' + name)
             })
         )
         merged_schema_string = dedent('''\
@@ -343,8 +343,8 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         merged_schema = MergedSchema(
             OrderedDict({
-                'first': RenamedSchema(ISS.directive_schema),
-                'second': RenamedSchema(extra_directive_schema)
+                'first': rename_schema(ISS.directive_schema),
+                'second': rename_schema(extra_directive_schema)
             })
         )
         merged_schema_string = dedent('''\
@@ -390,8 +390,8 @@ class TestSchemaObservers(unittest.TestCase):
     def test_no_rename_basic_merge(self):
         merged_schema = MergedSchema(
             OrderedDict({
-                'basic': RenamedSchema(ISS.basic_schema),
-                'enum': RenamedSchema(ISS.enum_schema)
+                'basic': rename_schema(ISS.basic_schema),
+                'enum': rename_schema(ISS.enum_schema)
             })
         )
         self.assertEqual(merged_schema.get_original_type('Human', 'basic'), 'Human')
@@ -406,8 +406,8 @@ class TestSchemaObservers(unittest.TestCase):
     def test_rename_basic_merge(self):
         merged_schema = MergedSchema(
             OrderedDict({
-                'first': RenamedSchema(ISS.basic_schema, lambda name: 'First' + name),
-                'second': RenamedSchema(ISS.basic_schema, lambda name: 'Second' + name)
+                'first': rename_schema(ISS.basic_schema, lambda name: 'First' + name),
+                'second': rename_schema(ISS.basic_schema, lambda name: 'Second' + name)
             })
         )
         self.assertEqual(merged_schema.get_original_type('FirstHuman', 'first'), 'Human')

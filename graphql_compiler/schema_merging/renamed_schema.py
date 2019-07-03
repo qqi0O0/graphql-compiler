@@ -1,3 +1,4 @@
+from collections import namedtuple
 from graphql import build_ast_schema, parse
 from graphql.language.printer import print_ast
 from graphql.language.visitor import Visitor, visit
@@ -5,106 +6,99 @@ from graphql.language.visitor import Visitor, visit
 from .utils import SchemaError, get_schema_data
 
 
-class RenamedSchema(object):
-    def __init__(self, schema_string, rename_func=lambda name: name):
-        """Create a RenamedSchema, where types and root fields are renamed using rename_func.
+RenamedSchema = namedtuple(
+    'RenamedSchema',
+    ['schema_ast',  # type: Document, ast representing the renamed schema
+     'reverse_name_map',  # type: Dict[str, str], maps new type name to old type name
+     'reverse_root_field_map'  # type: Dict[str, str], maps new root field name to old root field
+    ]
+)
 
-        Args:
-            schema_string: string describing a valid schema that does not contain extensions
-            rename_func: callable that takes string to string, used to transform the names of
-                         types, interfaces, enums, and root fields. Defaults to identity
 
-        Raises:
-            SchemaError if input schema_string does not represent a valid schema without extensions
-        """
-        self.schema_ast = None  # type: Document
-        self.reverse_name_map = {}  # maps new names to original names
-        self.reverse_root_field_map = {}  # maps new field names to original field names
+def rename_schema(schema_string, rename_func=lambda name: name):
+    """Create a RenamedSchema, where types and root fields are renamed using rename_func.
 
-        # Check that the input string is a parseable and valid schema.
-        try:
-            ast = parse(schema_string)
-            build_ast_schema(ast)
-        except Exception as e:  # Can't be more specific -- see graphql/utils/build_ast_schema.py
-            raise SchemaError('Input schema does not define a valid schema.\n'
-                              'Message: {}'.format(e))
+    Args:
+        schema_string: string describing a valid schema that does not contain extensions
+        rename_func: callable that takes string to string, used to transform the names of
+                     types, interfaces, enums, and root fields. Defaults to identity
 
-        schema_data = get_schema_data(ast)
-        # Check that the input schema has no extensions
-        if schema_data.has_extension:
-            raise SchemaError('Input schema should not contain extensions.')
+    Returns:
+        RenamedSchema
 
-        self._rename_schema(ast, rename_func, schema_data)
+    Raises:
+        SchemaError if input schema_string does not represent a valid schema without extensions,
+            or if there are conflicts between the renamed types or root fields
+    """
+    # Check that the input string is a parseable and valid schema.
+    try:
+        ast = parse(schema_string)
+        build_ast_schema(ast)
+    except Exception as e:  # Can't be more specific -- see graphql/utils/build_ast_schema.py
+        raise SchemaError('Input schema does not define a valid schema.\n'
+                          'Message: {}'.format(e))
 
-    @property
-    def schema_string(self):
-        return print_ast(self.schema_ast)
+    schema_data = get_schema_data(ast)
+    # Check that the input schema has no extensions
+    if schema_data.has_extension:
+        raise SchemaError('Input schema should not contain extensions.')
 
-    def _rename_schema(self, ast, rename_func, schema_data):
-        """Rename types/interfaces/enums and root fields
+    # Rename types, interfaces, enums
+    reverse_name_map = _rename_types(ast, rename_func, schema_data.query_type, schema_data.scalars)
 
-        Name and field maps will also be modified.
+    # Rename root fields
+    reverse_root_field_map = _rename_root_fields(ast, rename_func, schema_data.query_type)
 
-        Args:
-            schema_string: string, in GraphQL schema language
-            rename_func: callable that converts type names to renamed type names. Takes a string
-                         as input and returns a string. Defaults to identity function
-            schema_data: SchemaData, information about current schema
+    return RenamedSchema(schema_ast=ast, reverse_name_map=reverse_name_map,
+                         reverse_root_field_map=reverse_root_field_map)
 
-        Raises:
-            SchemaError if the input schema contains extensions, as the renamer doesn't currently
-                support extensions (build_ast_schema eats extensions), or if a renamed type in the
-                schemas string causes a type name conflict, between types/interfaces/enums/scalars
 
-        Return:
-            string, the new renamed schema
-        """
-        # Rename types, interfaces, enums
-        self._rename_types(ast, rename_func, schema_data.query_type, schema_data.scalars)
+def _rename_types(ast, rename_func, query_type_name, scalars):
+    """Rename types, enums, interfaces, and more using rename_func.
 
-        # Rename root fields
-        self._rename_root_fields(ast, rename_func, schema_data.query_type)
+    Types, interfaces, enum definitions will be renamed. The query type will not be renamed.
+    Scalar types, field names, enum values will not be renamed.
 
-        self.schema_ast = ast
+    ast will be modified as a result.
 
-    def _rename_types(self, ast, rename_func, query_type_name, scalars):
-        """Rename types, enums, interfaces, and more using rename_func.
+    Args:
+        ast: Document, the schema ast that we modify
+        rename_func: callable, used to rename types, interfaces, enums, etc
+        query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
+        scalars: set of strings, the set of user defined scalars
 
-        Types, interfaces, enum definitions will be renamed. The query type will not be renamed.
-        Scalar types, field names, enum values will not be renamed.
-        ast will be modified as a result.
+    Returns:
+        Dict[str, str], the new type name to original type name map
 
-        Args:
-            ast: Document, the schema ast that we modify
-            rename_func: callable, used to rename types, interfaces, enums, etc
-            query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
-            scalars: set of strings, the set of user defined scalars
+    Raises:
+        SchemaError if the rename causes name conflicts
+    """
+    visitor = RenameSchemaVisitor(rename_func, query_type_name, scalars)
+    visit(ast, visitor)
 
-        Raises:
-            SchemaError if the rename causes name conflicts
-        """
-        visitor = RenameSchemaVisitor(rename_func, query_type_name, scalars)
-        visit(ast, visitor)
+    return visitor.reverse_name_map
 
-        self.reverse_name_map = visitor.reverse_name_map  # no aliasing, visitor goes oos
 
-    def _rename_root_fields(self, ast, rename_func, query_type_name):
-        """Rename root fieldd -- fields of the query type.
+def _rename_root_fields(ast, rename_func, query_type_name):
+    """Rename root fields, aka fields of the query type.
 
-        ast will be modified as a result.
+    ast will be modified as a result.
 
-        Args:
-            ast: Document, the schema ast that we modify
-            rename_func: callable, used to rename fields of the query type
-            query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
+    Args:
+        ast: Document, the schema ast that we modify
+        rename_func: callable, used to rename fields of the query type
+        query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
 
-        Raises:
-            SchemaError if rename causes root field names to clash
-        """
-        visitor = RenameRootFieldsVisitor(rename_func, query_type_name)
-        visit(ast, visitor)
+    Returns:
+        Dict[str, str], the new root field name to original root field name map
 
-        self.reverse_root_field_map = visitor.reverse_field_map  # no aliasing, visitor goes oos
+    Raises:
+        SchemaError if rename causes root field name conflicts
+    """
+    visitor = RenameRootFieldsVisitor(rename_func, query_type_name)
+    visit(ast, visitor)
+
+    return visitor.reverse_field_map
 
 
 class RenameSchemaVisitor(Visitor):
