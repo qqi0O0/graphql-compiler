@@ -1,9 +1,11 @@
+from textwrap import dedent
 import unittest
-from .merge_schema_asts import merge_schema_asts
-from .test_schemas import *
+
 from graphql import parse
 from graphql.language.printer import print_ast
-from textwrap import dedent
+
+from .merge_schema_asts import merge_schema_asts
+from .test_schemas import *
 
 
 class TestMergeSchemaASTs(unittest.TestCase):

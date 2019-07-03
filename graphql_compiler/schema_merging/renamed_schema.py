@@ -1,6 +1,7 @@
 from graphql import build_ast_schema, parse
-from graphql.language.visitor import Visitor, visit
 from graphql.language.printer import print_ast
+from graphql.language.visitor import Visitor, visit
+
 from .utils import SchemaData, SchemaError, get_schema_data
 
 

@@ -1,5 +1,5 @@
-import unittest
 from textwrap import dedent
+import unittest
 
 from .renamed_schema import RenamedSchema
 from .test_schemas import *

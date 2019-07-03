@@ -1,10 +1,11 @@
 from collections import OrderedDict
-from .renamed_schema import RenamedSchema
-from .merged_schema import MergedSchema
-from .test_schemas import *
-from .utils import SchemaError
 from textwrap import dedent
 import unittest
+
+from .merged_schema import MergedSchema
+from .renamed_schema import RenamedSchema
+from .test_schemas import *
+from .utils import SchemaError
 
 
 class TestMergeSchemas(unittest.TestCase):

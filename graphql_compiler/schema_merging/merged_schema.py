@@ -1,5 +1,4 @@
-"""
-TODO:
+"""TODO:
 
 (Possibly) break the MergedSchema class into functions that do the stuff (the logic) and the output
     strings and mapping (the result). Even if later the logic changes, can still use result; the
@@ -14,12 +13,14 @@ Always add in the stitch directive as a special case for now
 
 
 from collections import OrderedDict
+
 from graphql import build_ast_schema, parse
-from graphql.language.visitor import Visitor, visit
 from graphql.language.printer import print_ast
+from graphql.language.visitor import Visitor, visit
 import six
-from .utils import SchemaError, SchemaData, get_schema_data
+
 from .merge_schema_asts import merge_schema_asts
+from .utils import SchemaData, SchemaError, get_schema_data
 
 
 class MergedSchema(object):

@@ -1,6 +1,9 @@
 from textwrap import dedent
 
 
+# TODO: What is the proper way of dealing with these schema strings and putting them in tests?
+
+
 basic_schema = dedent('''\
     schema {
       query: SchemaQuery
