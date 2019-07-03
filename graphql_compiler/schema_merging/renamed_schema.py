@@ -16,7 +16,7 @@ RenamedSchema = namedtuple(
 
 
 def rename_schema(schema_string, rename_func=lambda name: name):
-    """Create a RenamedSchema, where types and root fields are renamed using rename_func.
+    """Create a RenamedSchema, where types and query root fields are renamed using rename_func.
 
     Args:
         schema_string: string describing a valid schema that does not contain extensions
@@ -106,14 +106,31 @@ class RenameSchemaVisitor(Visitor):
     def __init__(self, rename_func, query_type, scalar_types):
         self.rename_func = rename_func  # callable that takes string to string
         self.reverse_name_map = {}  # Dict[str, str], from new name to original name
-        self.query_type = query_type
-        self.scalar_types = scalar_types
-        self.builtin_types = {'String', 'Int', 'Float', 'Boolean', 'ID'}
+        self.query_type = query_type  # str
+        self.scalar_types = frozenset(scalar_types)
+        self.builtin_types = frozenset({'String', 'Int', 'Float', 'Boolean', 'ID'})
+
+        # NOTE: behavior of Directive type is not completely clear
+        self.noop_types = frozenset({
+            'Name', 'Document', 'Argument', 'IntValue', 'FloatValue', 'StringValue',
+            'BooleanValue', 'EnumValue', 'ListValue', 'Directive', 'ListType', 'NonNullType',
+            'SchemaDefinition', 'OperationTypeDefinition', 'ScalarTypeDefinition',
+            'FieldDefinition', 'InputValueDefinition', 'EnumValueDefinition',
+            'DirectiveDefinition'
+        })
+        self.rename_types = frozenset({
+            'NamedType', 'ObjectTypeDefinition', 'InterfaceTypeDefinition',
+            'UnionTypeDefinition', 'EnumTypeDefinition'
+        })
+        self.unexpected_types = frozenset({
+            'OperationDefinition', 'SelectionSet', 'Field', 'FragmentSpread',
+            'InlineFragment', 'FragmentDefinition'
+        })
 
     def _rename_name_add_to_record(self, node):
         """Rename the value of the node, and add the name mapping to reverse_name_map.
 
-        Don't rename if the type is the query type, a scalar type, or a built in type.
+        Don't rename if the type is the query type, a scalar type, or a builtin type.
 
         Args:
             node: Name type Node
@@ -158,128 +175,25 @@ class RenameSchemaVisitor(Visitor):
         node.value = new_name_string
         self.reverse_name_map[new_name_string] = name_string
 
-    # In order of QUERY_DOCUMENT_KEYS
-
-    def enter_Name(self, node, *args):
-        pass
-
-    def enter_Document(self, node, *args):
-        pass
-
-    def enter_OperationDefinition(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('OperationDefinition'))
-
-    def enter_VariableDefinition(self, node, *args):
-        raise AssertionError('Unimplemented')
-
-    def enter_Variable(self, node, *args):
-        raise AssertionError('Unimplemented')
-
-    def enter_SelectionSet(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('SelectionSet'))
-
-    def enter_Field(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('Field'))
-
-    def enter_Argument(self, node, *args):
-        # argument of directive
-        pass
-
-    def enter_FragmentSpread(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentSpread'))
-
-    def enter_InlineFragment(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('InlineFragment'))
-
-    def enter_FragmentDefinition(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentDefinition'))
-
-    def enter_IntValue(self, node, *args):
-        pass
-
-    def enter_FloatValue(self, node, *args):
-        pass
-
-    def enter_StringValue(self, node, *args):
-        pass
-
-    def enter_BooleanValue(self, node, *args):
-        pass
-
-    def enter_EnumValue(self, node, *args):
-        pass
-
-    def enter_ListValue(self, node, *args):
-        pass
-
-    def enter_ObjectValue(self, node, *args):
-        raise AssertionError('Unimplemented')
-
-    def enter_ObjectField(self, node, *args):
-        raise AssertionError('Unimplemented')
-
-    def enter_Directive(self, node, *args):
-        # TODO: behavior is not clear
-        pass
-
-    def enter_NamedType(self, node, *args):
-        """Rename all named types that are not the query type, scalars, or builtins."""
-        self._rename_name_add_to_record(node.name)
-
-    def enter_ListType(self, node, *args):
-        pass
-
-    def enter_NonNullType(self, node, *args):
-        pass
-
-    def enter_SchemaDefinition(self, node, *args):
-        pass
-
-    def enter_OperationTypeDefinition(self, node, *args):
-        pass
-
-    def enter_ScalarTypeDefinition(self, node, *args):
-        pass
-
-    def enter_ObjectTypeDefinition(self, node, *args):
-        # NamedType takes care of interfaces, FieldDefinition takes care of fields, Directive
-        # takes care of directives
-        self._rename_name_add_to_record(node.name)
-
-    def enter_FieldDefinition(self, node, *args):
-        # No rename name, InputValueDefinition takes care of arguments, NamedType cares care of
-        # type, Directive takes care of directives
-        # NOTE: the directives are interestingly not printed if you print node, but they do exist
-        pass
-
-    def enter_InputValueDefinition(self, node, *args):
-        # No rename name, NamedType takes care of type, no rename default_value, Directive takes
-        # care of directives
-        pass
-
-    def enter_InterfaceTypeDefinition(self, node, *args):
-        # FieldDefinition takes care of fields, Directive takes care of directives
-        self._rename_name_add_to_record(node.name)
-
-    def enter_UnionTypeDefinition(self, node, *args):
-        # NamedType takes care of types, Directive takes care of directives
-        self._rename_name_add_to_record(node.name)
-
-    def enter_EnumTypeDefinition(self, node, *args):
-        # EnumValueDefinition takes care of values, Directive takes care of directives
-        self._rename_name_add_to_record(node.name)
-
-    def enter_EnumValueDefinition(self, node, *args):
-        pass
-
-    def enter_InputObjectTypeDefinition(self, node, *args):
-        raise AssertionError('Unimplemented')
-
-    def enter_TypeExtensionDefinition(self, node, *args):
-        raise SchemaError('Extension definition not allowed')
-
-    def enter_DirectiveDefinition(self, node, *args):
-        pass
+    def enter(self, node, key, parent, path, ancestors):
+        node_type = type(node).__name__
+        if node_type in self.noop_types:
+            # Do nothing, continue traversal
+            return None
+        elif node_type in self.rename_types:
+            # Rename and put into record the name attribute of current node; continue traversal
+            self._rename_name_add_to_record(node.name)
+        elif node_type in self.unexpected_types:
+            # Node type unexpected in schema definition, raise error
+            raise SchemaError('Node type "{}" unexpected in schema AST'.format(node_type))
+        elif node_type == 'TypeExtensionDefinition':
+            raise SchemaError('Extension definition not allowed')
+        else:
+            # Currently: VariableDefinition, Variable, ObjectValue, ObjectField, 
+            # InputObjectTypeDefinition
+            # The above types I'm not sure what to do about
+            # TODO
+            raise AssertionError('Missed type: "{}"'.format(node_type))
 
 
 class RenameRootFieldsVisitor(Visitor):

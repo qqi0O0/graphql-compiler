@@ -7,6 +7,7 @@ from graphql_compiler.schema_merging.utils import SchemaError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
+# TODO: illegal input containing extensions
 
 class TestRenameSchema(unittest.TestCase):
     def test_no_rename(self):
@@ -403,6 +404,10 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
         self.assertEqual({'Human': 'Human'}, renamed_schema.reverse_name_map)
         self.assertEqual({'String': 'human'}, renamed_schema.reverse_root_field_map)
+
+    def test_input_schema_extension(self):
+        with self.assertRaises(SchemaError):
+            rename_schema(ISS.extension_schema)
 
     def test_various_types_rename(self):
         renamed_schema = rename_schema(ISS.various_types_schema, lambda name: 'New' + name)

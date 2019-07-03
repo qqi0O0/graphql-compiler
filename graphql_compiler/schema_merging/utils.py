@@ -7,20 +7,14 @@ class SchemaError(Exception):
 
 
 SchemaData = namedtuple('SchemaData', ['query_type', 'scalars', 'directives', 'has_extension'])
-#class SchemaData(object):
-#    def __init__(self):
-#        self.query_type = None  # str, name of the query type, e.g. 'RootSchemaQuery'
-#        self.scalars = set()  # Set(str), names of scalar types
-#        self.directives = set()  # Set(str), names of directives
-#        self.has_extension = False
 
 
 class GetSchemaDataVisitor(Visitor):
     """Gather information about the schema to aid any transforms."""
     def __init__(self):
         self.query_type = None  # str, name of the query type, e.g. 'RootSchemaQuery'
-        self.scalars = set()  # Set(str), names of scalar types
-        self.directives = set()  # Set(str), names of directives
+        self.scalars = set()  # Set[str], names of scalar types
+        self.directives = set()  # Set[str], names of directives
         self.has_extension = False
 
     def enter_TypeExtensionDefinition(self, node, *args):
