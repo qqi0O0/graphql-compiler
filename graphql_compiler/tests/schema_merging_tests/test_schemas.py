@@ -1,7 +1,11 @@
 from textwrap import dedent
 
 
-# TODO: What is the proper way of dealing with these schema strings and putting them in tests?
+# TODO
+# make these strings into a class of constants in a python file that's named
+# input_schema_strings.py or something like that (not named test_something.py)
+# Then make a subdirectory in the test folder for all the different test files that use these
+# strings
 
 
 basic_schema = dedent('''\
