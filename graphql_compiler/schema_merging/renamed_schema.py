@@ -6,33 +6,21 @@ from .utils import SchemaData, SchemaError, get_schema_data
 
 class RenamedSchema(object):
     def __init__(self, schema_string, rename_func=lambda name: name):
-        """Create a RenamedSchema.
+        """Create a RenamedSchema, where types and root fields are renamed using rename_func.
 
         Args:
             schema_string: string describing a valid schema that does not contain extensions
             rename_func: callable that takes string to string, used to transform the names of
                          types, interfaces, enums, and root fields. Defaults to identity
+
+        Raises:
+            SchemaError if input schema_string does not represent a valid schema without extensions
         """
         self.schema_ast = None  # type: Document
         self.reverse_name_map = {}  # maps new names to original names
         self.reverse_root_field_map = {}  # maps new field names to original field names
 
-        self._check_schema_validity(schema_string)
-        self._rename_schema(schema_string, rename_func)
-
-    @property
-    def schema_string(self):
-        return print_ast(self.schema_ast)
-
-    def _check_schema_validity(self, schema_string):
-        """Check that input schema is a valid standalone schema without type extensions.
-
-        Args:
-            schema_string: string
-
-        Raises:
-            SchemaError if input schema is not a valid input schema.
-        """
+        # Check that the input string is a parseable and valid schema.
         try:
             ast = parse(schema_string)
             build_ast_schema(ast)
@@ -40,12 +28,18 @@ class RenamedSchema(object):
             raise SchemaError('Input schema does not define a valid schema.\n'
                               'Message: {}'.format(e))
 
-        # Extensions not allowed in input schemas
         schema_data = get_schema_data(ast)
+        # Check that the input schema has no extensions
         if schema_data.has_extension:
-            raise SchemaError("Input schemas should not contain extensions")
+            raise SchemaError("Input schema should not contain extensions.")
 
-    def _rename_schema(self, schema_string, rename_func):
+        self._rename_schema(ast, rename_func, schema_data)
+
+    @property
+    def schema_string(self):
+        return print_ast(self.schema_ast)
+
+    def _rename_schema(self, ast, rename_func, schema_data):
         """Rename types/interfaces/enums and root fields
 
         Name and field maps will also be modified.
@@ -54,6 +48,7 @@ class RenamedSchema(object):
             schema_string: string, in GraphQL schema language
             rename_func: callable that converts type names to renamed type names. Takes a string
                          as input and returns a string. Defaults to identity function
+            schema_data: SchemaData, information about current schema
 
         Raises:
             SchemaError if the input schema contains extensions, as the renamer doesn't currently
@@ -63,44 +58,39 @@ class RenamedSchema(object):
         Return:
             string, the new renamed schema
         """
-        ast = parse(schema_string)
-
-        # Get data about the schema
-        schema_data = get_schema_data(ast)
-        query_type_name = schema_data.query_type
-
         # Rename types, interfaces, enums
-        self._rename_types(ast, rename_func, schema_data)
+        self._rename_types(ast, rename_func, schema_data.query_type, schema_data.scalars)
 
         # Rename root fields
-        self._rename_root_fields(ast, rename_func, query_type_name)
+        self._rename_root_fields(ast, rename_func, schema_data.query_type)
 
-        # Set ast to edited version
         self.schema_ast = ast
 
-    def _rename_types(self, ast, rename_func, schema_data):
+    def _rename_types(self, ast, rename_func, query_type_name, scalars):
         """Rename types, enums, interfaces, and more using rename_func.
 
-        Types, interfaces, enum definitions will be renamed.
-        Scalar types, field names inside type definitions, enum values will not be renamed.
-        Fields of the query type will later be renamed, but not here.
-        ast will be modified as a result
+        Types, interfaces, enum definitions will be renamed. The query type will not be renamed.
+        Scalar types, field names, enum values will not be renamed.
+        ast will be modified as a result.
 
         Args:
             ast: Document, the schema ast that we modify
             rename_func: callable, used to rename types, interfaces, enums, etc
-            schema_data: SchemaData, information about current schema
+            query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
+            scalars: set of strings, the set of user defined scalars
 
         Raises:
             SchemaError if the rename causes name conflicts
         """
-        visitor = RenameSchemaVisitor(rename_func, schema_data.query_type, schema_data.scalars)
+        visitor = RenameSchemaVisitor(rename_func, query_type_name, scalars)
         visit(ast, visitor)
 
         self.reverse_name_map = visitor.reverse_name_map  # no aliasing, visitor goes oos
 
     def _rename_root_fields(self, ast, rename_func, query_type_name):
-        """Change query type to extension, rename query type and its fields.
+        """Rename root fieldd -- fields of the query type.
+
+        ast will be modified as a result.
 
         Args:
             ast: Document, the schema ast that we modify
@@ -108,7 +98,7 @@ class RenamedSchema(object):
             query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
 
         Raises:
-            SchemaError if rename causes field names to clash
+            SchemaError if rename causes root field names to clash
         """
         visitor = RenameRootFieldsVisitor(rename_func, query_type_name)
         visit(ast, visitor)
@@ -147,7 +137,7 @@ class RenameSchemaVisitor(Visitor):
             return
 
         new_name_string = self.rename_func(name_string)
-        node.value = new_name_string
+
         if (
             new_name_string in self.reverse_name_map and
             self.reverse_name_map[new_name_string] != name_string
@@ -170,6 +160,7 @@ class RenameSchemaVisitor(Visitor):
                 )
             )
 
+        node.value = new_name_string
         self.reverse_name_map[new_name_string] = name_string
 
     # In order of QUERY_DOCUMENT_KEYS
@@ -256,33 +247,31 @@ class RenameSchemaVisitor(Visitor):
         pass
 
     def enter_ObjectTypeDefinition(self, node, *args):
-        # NamedType takes care of interfaces, FieldDefinition takes care of fields
-        # NOTE: directives
+        # NamedType takes care of interfaces, FieldDefinition takes care of fields, Directive
+        # takes care of directives
         self._rename_name_add_to_record(node.name)
 
     def enter_FieldDefinition(self, node, *args):
-        # No rename name, InputValueDefinition takes care of arguments, NamedType cares care of type
-        # NOTE: directives
+        # No rename name, InputValueDefinition takes care of arguments, NamedType cares care of
+        # type, Directive takes care of directives
+        # NOTE: the directives are interestingly not printed if you print node, but they do exist
         pass
 
     def enter_InputValueDefinition(self, node, *args):
-        # No rename name, NamedType takes care of type, no rename default_value
-        # NOTE: directives
+        # No rename name, NamedType takes care of type, no rename default_value, Directive takes
+        # care of directives
         pass
 
     def enter_InterfaceTypeDefinition(self, node, *args):
-        # FieldDefinition takes care of fields
-        # NOTE: directives
+        # FieldDefinition takes care of fields, Directive takes care of directives
         self._rename_name_add_to_record(node.name)
 
     def enter_UnionTypeDefinition(self, node, *args):
-        # NamedType takes care of types
-        # NOTE: directives
+        # NamedType takes care of types, Directive takes care of directives
         self._rename_name_add_to_record(node.name)
 
     def enter_EnumTypeDefinition(self, node, *args):
-        # EnumValueDefinition takes care of values
-        # NOTE: directives
+        # EnumValueDefinition takes care of values, Directive takes care of directives
         self._rename_name_add_to_record(node.name)
 
     def enter_EnumValueDefinition(self, node, *args):
@@ -294,7 +283,7 @@ class RenameSchemaVisitor(Visitor):
     def enter_TypeExtensionDefinition(self, node, *args):
         raise SchemaError('Extension definition not allowed')
 
-    def enter_directive_definition(self, node, *args):
+    def enter_DirectiveDefinition(self, node, *args):
         pass
 
 
@@ -320,7 +309,7 @@ class RenameRootFieldsVisitor(Visitor):
         if self.in_query_type:
             field_name = node.name.value
             new_field_name = self.rename_func(field_name)
-            node.name.value = new_field_name
+
             if (
                 new_field_name in self.reverse_field_map and
                 self.reverse_field_map[new_field_name] != field_name
@@ -330,4 +319,6 @@ class RenameRootFieldsVisitor(Visitor):
                         field_name, self.reverse_field_map[new_field_name], new_field_name
                     )
                 )
+
+            node.name.value = new_field_name
             self.reverse_field_map[new_field_name] = field_name
