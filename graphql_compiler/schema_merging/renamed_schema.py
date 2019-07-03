@@ -1,7 +1,119 @@
+from graphql import build_ast_schema, parse
 from graphql.language.visitor import Visitor, visit
-from graphql.language import ast
-from graphql.language.ast import TypeExtensionDefinition
-from .types_util import SchemaData, SchemaError
+from graphql.language.printer import print_ast
+from .utils import SchemaData, SchemaError, get_schema_data
+
+
+class RenamedSchema(object):
+    def __init__(self, schema_string, rename_func=lambda name: name):
+        """Create a RenamedSchema.
+
+        Args:
+            schema_string: string describing a valid schema that does not contain extensions
+            rename_func: callable that takes string to string, used to transform the names of
+                         types, interfaces, enums, and root fields. Defaults to identity
+        """
+        self.schema_ast = None  # type: Document
+        self.reverse_name_map = {}  # maps new names to original names
+        self.reverse_root_field_map = {}  # maps new field names to original field names
+
+        self._check_schema_validity(schema_string)
+        self._rename_schema(schema_string, rename_func)
+
+    @property
+    def schema_string(self):
+        return print_ast(self.schema_ast)
+
+    def _check_schema_validity(self, schema_string):
+        """Check that input schema is a valid standalone schema without type extensions.
+
+        Args:
+            schema_string: string
+
+        Raises:
+            SchemaError if input schema is not a valid input schema.
+        """
+        try:
+            ast = parse(schema_string)
+            build_ast_schema(ast)
+        except Exception as e:  # Can't be more specific -- see graphql/utils/build_ast_schema.py
+            raise SchemaError('Input schema does not define a valid schema.\n'
+                              'Message: {}'.format(e))
+
+        # Extensions not allowed in input schemas
+        schema_data = get_schema_data(ast)
+        if schema_data.has_extension:
+            raise SchemaError("Input schemas should not contain extensions")
+
+    def _rename_schema(self, schema_string, rename_func):
+        """Rename types/interfaces/enums and root fields
+
+        Name and field maps will also be modified.
+
+        Args:
+            schema_string: string, in GraphQL schema language
+            rename_func: callable that converts type names to renamed type names. Takes a string
+                         as input and returns a string. Defaults to identity function
+
+        Raises:
+            SchemaError if the input schema contains extensions, as the renamer doesn't currently
+                support extensions (build_ast_schema eats extensions), or if a renamed type in the
+                schemas string causes a type name conflict, between types/interfaces/enums/scalars
+
+        Return:
+            string, the new renamed schema
+        """
+        ast = parse(schema_string)
+
+        # Get data about the schema
+        schema_data = get_schema_data(ast)
+        query_type_name = schema_data.query_type
+
+        # Rename types, interfaces, enums
+        self._rename_types(ast, rename_func, schema_data)
+
+        # Rename root fields
+        self._rename_root_fields(ast, rename_func, query_type_name)
+
+        # Set ast to edited version
+        self.schema_ast = ast
+
+    def _rename_types(self, ast, rename_func, schema_data):
+        """Rename types, enums, interfaces, and more using rename_func.
+
+        Types, interfaces, enum definitions will be renamed.
+        Scalar types, field names inside type definitions, enum values will not be renamed.
+        Fields of the query type will later be renamed, but not here.
+        ast will be modified as a result
+
+        Args:
+            ast: Document, the schema ast that we modify
+            rename_func: callable, used to rename types, interfaces, enums, etc
+            schema_data: SchemaData, information about current schema
+
+        Raises:
+            SchemaError if the rename causes name conflicts
+        """
+        visitor = RenameSchemaVisitor(rename_func, schema_data.query_type, schema_data.scalars)
+        visit(ast, visitor)
+
+        self.reverse_name_map = visitor.reverse_name_map  # no aliasing, visitor goes oos
+
+    def _rename_root_fields(self, ast, rename_func, query_type_name):
+        """Change query type to extension, rename query type and its fields.
+
+        Args:
+            ast: Document, the schema ast that we modify
+            rename_func: callable, used to rename fields of the query type
+            query_type_name: string, name of the query type, e.g. 'RootSchemaQuery'
+
+        Raises:
+            SchemaError if rename causes field names to clash
+        """
+        visitor = RenameRootFieldsVisitor(rename_func, query_type_name)
+        visit(ast, visitor)
+
+        self.reverse_root_field_map = visitor.reverse_field_map  # no aliasing, visitor goes oos
 
 
 class RenameSchemaVisitor(Visitor):
@@ -69,7 +181,7 @@ class RenameSchemaVisitor(Visitor):
         pass
 
     def enter_OperationDefinition(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('OperationDefinition')) 
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('OperationDefinition'))
 
     def enter_VariableDefinition(self, node, *args):
         raise AssertionError('Unimplemented')
@@ -78,23 +190,23 @@ class RenameSchemaVisitor(Visitor):
         raise AssertionError('Unimplemented')
 
     def enter_SelectionSet(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('SelectionSet')) 
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('SelectionSet'))
 
     def enter_Field(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('Field')) 
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('Field'))
 
     def enter_Argument(self, node, *args):
         # argument of directive
         pass
 
     def enter_FragmentSpread(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentSpread')) 
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentSpread'))
 
     def enter_InlineFragment(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('InlineFragment')) 
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('InlineFragment'))
 
     def enter_FragmentDefinition(self, node, *args):
-        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentDefinition')) 
+        raise SchemaError('Node type "{}" unexpected in schema AST.'.format('FragmentDefinition'))
 
     def enter_IntValue(self, node, *args):
         pass
@@ -214,72 +326,8 @@ class RenameRootFieldsVisitor(Visitor):
                 self.reverse_field_map[new_field_name] != field_name
             ):
                 raise SchemaError(
-                    '{} and {} are both renamed to {}'.format(
+                    '"{}" and "{}" are both renamed to "{}"'.format(
                         field_name, self.reverse_field_map[new_field_name], new_field_name
                     )
                 )
             self.reverse_field_map[new_field_name] = field_name
-
-
-class RemoveDuplicatesVisitor(Visitor):
-    """Remove repeated scalar or directive definitions."""
-    def __init__(self, existing_scalars, existing_directives):
-        self.existing_scalars = existing_scalars
-        self.existing_directives = existing_directives
-
-    def enter_ScalarTypeDefinition(self, node, key, parent, path, ancestors):
-        """If scalar has already been defined, remove it from the ast."""
-        if node.name.value in self.existing_scalars:
-            parent[key] = None
-
-    def enter_DirectiveDefinition(self, node, key, parent, path, ancestors):
-        """If directive has already been defined, remove it from the ast."""
-        if node.name.value in self.existing_directives:
-            parent[key] = None
-
-
-class GetSchemaDataVisitor(Visitor):
-    """Gather information about the schema before making any transforms."""
-    def __init__(self):
-        self.schema_data = SchemaData()
-
-    def enter_TypeExtensionDefinition(self, node, *args):
-        self.schema_data.has_extension = True
-
-    def enter_OperationTypeDefinition(self, node, *args):
-        if node.operation == 'query':  # might add mutation and subscription options
-            self.schema_data.query_type = node.type.name.value
-
-    def enter_ScalarTypeDefinition(self, node, *args):
-        self.schema_data.scalars.add(node.name.value)
-
-    def enter_DirectiveDefinition(self, node, *args):
-        # NOTE: currently we don't check if the definitions of the directives agree.
-        # Any directive that comes after one of the same one is simply erased
-        self.schema_data.directives.add(node.name.value)
-
-
-def get_schema_data(ast):
-    """Get schema data of input ast.
-
-    Args:
-        ast: Document
-
-    Return:
-        SchemaData
-    """
-    # NOTE: currently we're calling this whenever needed, rather than passing the computed
-    # schema_data around. This can be optimized if needed
-    get_schema_data_visitor = GetSchemaDataVisitor()
-    visit(ast, get_schema_data_visitor)
-    return get_schema_data_visitor.schema_data
-
-
-class DemangleQueryVisitor(Visitor):
-    def __init__(self, reverse_name_id_map, reverse_root_field_id_map, schema_identifier):
-        pass
-
-    # Want to rename two things: the first level selection set field names (root fields)
-    # and NamedTypes (e.g. in fragments)
-    # Should do those in two steps
-    # TODO

@@ -1,6 +1,6 @@
 import copy
 from graphql.language import ast
-from .visitors import get_schema_data
+from .utils import get_schema_data
 
 def merge_schema_asts(ast1, ast2):
     """Merge two schema asts.

@@ -5,6 +5,7 @@ from graphql import parse
 from graphql.language.printer import print_ast
 from textwrap import dedent
 
+
 class TestMergeSchemaASTs(unittest.TestCase):
     def test_no_conflict_merge(self):
         ast1 = parse(basic_schema)

@@ -1,16 +1,15 @@
 import unittest
 from textwrap import dedent
 
-from .schema_merging import *
+from .renamed_schema import RenamedSchema
 from .test_schemas import *
-from graphql.language.printer import print_ast
-from graphql import parse
+from .utils import SchemaError
 
 
 class TestRenameSchema(unittest.TestCase):
     def test_no_rename(self):
         renamed_schema = RenamedSchema(basic_schema)
-        
+
         self.assertEqual(basic_schema, renamed_schema.schema_string)
         self.assertEqual({'Human': 'Human'}, renamed_schema.reverse_name_map)
         self.assertEqual({'Human': 'Human'}, renamed_schema.reverse_root_field_map)
@@ -280,10 +279,12 @@ class TestRenameSchema(unittest.TestCase):
               human2: Human2
             }
         ''')
+
         def rename_func(name):
             if name[0] == 'H':
                 return 'Human'
             return name
+
         with self.assertRaises(SchemaError):
             RenamedSchema(schema_string, rename_func)
 
@@ -306,10 +307,12 @@ class TestRenameSchema(unittest.TestCase):
               human2: Human2
             }
         ''')
+
         def rename_func(name):
             if name[0] == 'h':
                 return 'human'
             return name
+
         with self.assertRaises(SchemaError):
             RenamedSchema(schema_string, rename_func)
 
@@ -329,10 +332,12 @@ class TestRenameSchema(unittest.TestCase):
               human: Human
             }
         ''')
+
         def rename_func(name):
             if name == 'Human':
                 return 'SCALAR'
             return name
+
         with self.assertRaises(SchemaError):
             RenamedSchema(schema_string, rename_func)
 
@@ -350,10 +355,12 @@ class TestRenameSchema(unittest.TestCase):
               human: Human
             }
         ''')
+
         def rename_func(name):
             if name == 'Human':
                 return 'String'
             return name
+
         with self.assertRaises(SchemaError):
             RenamedSchema(schema_string, rename_func)
 
@@ -371,10 +378,12 @@ class TestRenameSchema(unittest.TestCase):
               human: Human
             }
         ''')
+
         def rename_func(name):
             if name == 'human':
                 return 'String'
             return name
+
         renamed_schema = RenamedSchema(schema_string, rename_func)
         renamed_schema_string = dedent('''\
             schema {
