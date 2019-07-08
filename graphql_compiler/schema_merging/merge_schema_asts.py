@@ -20,7 +20,7 @@ def merge_schema_asts(ast1, ast2):
     Args:
         ast1, ast2: Documents representing schemaa; not modified by the function
 
-    Return:
+    Returns:
         Document that merged ast1 and ast2
     """
     # TODO: change this to either be a helper function that doesn't do any of the validity checks

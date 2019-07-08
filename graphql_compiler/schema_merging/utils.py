@@ -2,13 +2,20 @@
 from collections import namedtuple
 
 from graphql.language.visitor import Visitor, visit
+from graphql.type.definition import GraphQLScalarType
 
 
 class SchemaError(Exception):
     pass
 
 
-SchemaData = namedtuple('SchemaData', ['query_type', 'scalars', 'directives'])
+SchemaData = namedtuple(
+    'SchemaData', (
+        'query_type',  # str, name of the query type of the schema
+        'scalars',  # Set[str], set of names of user defined scalars
+        'directives'  # Set[str], set of names of user defined directives
+    )
+)
 
 
 class GetSchemaDataVisitor(Visitor):
@@ -30,7 +37,10 @@ class GetSchemaDataVisitor(Visitor):
 
     def enter_DirectiveDefinition(self, node, *args):
         """Add to records the name of user defined directive type."""
-        # NOTE: currently we don't check if the definitions of the directives agree.
+        # NOTE: currently we don't check if the definitions of the directives agree
+        # May change SchemaData to have a dictionary of directive names to directive definition
+        # nodes, instead of just a set of directive names, to help check the definitions of
+        # directives
         self.directives.add(node.name.value)
 
     def leave_Document(self, node, *args):
@@ -43,11 +53,15 @@ class GetSchemaDataVisitor(Visitor):
 def get_schema_data(ast):
     """Get schema data of input ast.
 
+    This function is generally called before performing transformations on the ast, to inform
+    transformations (for instance, so that we don't rename scalar types).
+
     Args:
         ast: Document
 
     Returns:
-        SchemaData
+        SchemaData, a namedtuple that contains the name of the query type, the set of names of
+        user defined scalars, and the set of names of user defined directives
     """
     get_schema_data_visitor = GetSchemaDataVisitor()
     visit(ast, get_schema_data_visitor)
