@@ -6,7 +6,7 @@ from graphql.language.printer import print_ast
 from graphql.language.visitor_meta import QUERY_DOCUMENT_KEYS
 
 from graphql_compiler.schema_merging.rename_schema import RenameSchemaTypesVisitor, rename_schema
-from graphql_compiler.schema_merging.utils import SchemaError
+from graphql_compiler.schema_merging.utils import SchemaError, SchemaRenameConflictError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
@@ -287,7 +287,7 @@ class TestRenameSchema(unittest.TestCase):
         class ConstantDict(object):
             def get(self, key, default_val):
                 return 'OneType'
-        with self.assertRaises(SchemaError):
+        with self.assertRaises(SchemaRenameConflictError):
             rename_schema(ISS.list_schema, ConstantDict())
 
     def test_clashing_root_field_rename(self):
@@ -310,7 +310,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaError):
+        with self.assertRaises(SchemaRenameConflictError):
             rename_schema(schema_string, {'human1': 'human', 'human2': 'human'})
 
     def test_clashing_type_rename(self):
@@ -333,7 +333,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaError):
+        with self.assertRaises(SchemaRenameConflictError):
             rename_schema(schema_string, {'Human1': 'Human', 'Human2': 'Human'})
 
     def test_clashing_scalar_type_rename(self):
@@ -353,7 +353,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaError):
+        with self.assertRaises(SchemaRenameConflictError):
             rename_schema(schema_string, {'Human': 'SCALAR'})
 
     def test_builtin_type_conflict_rename(self):
@@ -371,7 +371,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaError):
+        with self.assertRaises(SchemaRenameConflictError):
             rename_schema(schema_string, {'Human': 'String'})
 
     def test_builtin_field_conflict_rename(self):
