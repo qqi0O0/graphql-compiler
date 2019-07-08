@@ -1,7 +1,4 @@
 # Copyright 2019-present Kensho Technologies, LLC.
-from collections import namedtuple
-
-from graphql.language.visitor import Visitor, visit
 from graphql.type.definition import GraphQLScalarType
 
 

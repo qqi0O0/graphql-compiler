@@ -58,7 +58,7 @@ class TestRenameSchema(unittest.TestCase):
 
     def test_enum_rename(self):
         renamed_schema = rename_schema(ISS.enum_schema,
-                                      {'Droid': 'NewDroid', 'Height': 'NewHeight'})
+                                       {'Droid': 'NewDroid', 'Height': 'NewHeight'})
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery

@@ -48,7 +48,7 @@ def rename_schema(schema_string, rename_dict):
 
     # Check that the ast can be built into a valid schema
     # May raise Exception -- see graphql/utils/build_ast_schema.py
-    schema = build_ast_schema(ast)  
+    schema = build_ast_schema(ast)
 
     query_type = get_query_type_name(schema)
     scalars = get_scalar_names(schema)
