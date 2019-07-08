@@ -14,25 +14,31 @@ def merge_schema_asts(ast1, ast2):
     query root fields of the input schema asts. The two asts must not have name conflicts among
     its types and root fields.
 
+    The two asts do not need to be valid on their own. For example, ast2 may refer to a scalar
+    type that is not defined in ast2.
+
     Args:
         ast1, ast2: Documents representing schemaa; not modified by the function
 
     Return:
         Document that merged ast1 and ast2
     """
+    # TODO: change this to either be a helper function that doesn't do any of the validity checks
+    # and just exists as a small part of the merge_schemas file, or make it a standalone thing
+    # that takes care of the deduplication
     # NOTE: it's pretty hard to check that these ASTs are of the right format without using a
     # try catch block with build_ast_schema
     assert isinstance(ast1, ast.Document)
     assert isinstance(ast2, ast.Document)
 
+    schema_data1 = get_schema_data(ast1)
+    schema_data2 = get_schema_data(ast2)
+
     merged_ast = copy.deepcopy(ast1)
     new_ast = copy.deepcopy(ast2)
 
-    schema_data1 = get_schema_data(merged_ast)
-    schema_data2 = get_schema_data(new_ast)
-
-    assert schema_data1.scalars.isdisjoint(schema_data2.scalars)
-    assert schema_data1.directives.isdisjoint(schema_data2.directives)
+    # TODO: assert scalar sets are disjoint
+    # TODO: assert directive sets are disjoint
     # TODO: assert root fields are disjoint
     # TODO: assert types are disjoint
 

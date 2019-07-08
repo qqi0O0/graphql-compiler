@@ -3,14 +3,28 @@ from textwrap import dedent
 import unittest
 
 from graphql.language.printer import print_ast
+from graphql.language.visitor_meta import QUERY_DOCUMENT_KEYS
 
-from graphql_compiler.schema_merging.rename_schema import rename_schema
+from graphql_compiler.schema_merging.rename_schema import RenameSchemaTypesVisitor, rename_schema
 from graphql_compiler.schema_merging.utils import SchemaError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
 
 class TestRenameSchema(unittest.TestCase):
+    def test_rename_visitor_type_coverage(self):
+        """Check that all types are covered without overlap."""
+        all_types = set(ast_type.__name__ for ast_type in QUERY_DOCUMENT_KEYS)
+        type_sets = [RenameSchemaTypesVisitor.noop_types,
+                     RenameSchemaTypesVisitor.rename_types,
+                     RenameSchemaTypesVisitor.unexpected_types,
+                     RenameSchemaTypesVisitor.disallowed_types]
+        type_sets_union = set()
+        for type_set in type_sets:
+            self.assertTrue(type_sets_union.isdisjoint(type_set))
+            type_sets_union.update(type_set)
+        self.assertEqual(all_types, type_sets_union)
+
     def test_no_rename(self):
         renamed_schema = rename_schema(ISS.basic_schema)
 
