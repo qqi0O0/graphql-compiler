@@ -27,6 +27,35 @@ from .utils import SchemaError, get_schema_data
 
 
 # Change MergedSchema to a lightweight namedtuple, and have a function produce it
+MergedSchema = namedtuple(
+    'MergedSchema', [
+        'schema_ast',
+        'reverse_name_id_map',
+        'reverse_root_field_id_map'
+    ]
+)
+
+
+def merge_schemas(schemas_dict):
+    """Check that input schemas do not contain name clashes, then merge.
+
+    Merged schema will contain all type, interface, enum, scalar, and directive definitions
+    from input schemas. Its root fields will be the union of all root fields from input
+    schemas.
+
+    The name of its root query type will be the name of the root query type in the first
+    input schema.
+
+    Args:
+        schemas_dict: OrderedDict where keys are schema_identifiers, and values are
+                      RenamedSchema objects. Schemas will be merged in order
+
+    Raises:
+        SchemaError if any schema contains extensions, or if a renamed type causes a name
+            conflict
+    """
+    pass
+
 
 class MergedSchema(object):
     # TODO: use helpers in compiler like merge_disjoint_dict -- fail on assertions easier to
