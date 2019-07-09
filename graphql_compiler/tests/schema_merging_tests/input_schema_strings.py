@@ -256,24 +256,6 @@ class InputSchemaStrings(object):
         }
     ''')
 
-    extension_schema = dedent('''\
-        schema {
-          query: SchemaQuery
-        }
-
-        type SchemaQuery {
-          Human: Human
-        }
-
-        type Human {
-          id: String
-        }
-
-        extend type Human {
-          age: Int
-        }
-    ''')
-
     invalid_schema = dedent('''\
         schema {
           query: SchemaQuery
