@@ -17,7 +17,6 @@ RenamedSchema = namedtuple(
     'RenamedSchema', (
         'schema_ast',  # type: Document, ast representing the renamed schema
         'reverse_name_map',  # type: Dict[str, str], renamed type/root field name to original name
-        # Any type/root field name that is unchanged will not appear in reverse_name_map
     )
 )
 
@@ -36,13 +35,13 @@ def rename_schema(schema_string, rename_dict):
                        share the same name as the types they query
         rename_dict: Dict[str, str], mapping original type/field names to renamed type/field names.
                      Type or root field names that do not appear in the dict will be unchanged.
-                     Any dict-like object that implements __getitem__ and __contains__ may also
-                     be used
+                     Any dict-like object that implements get(key, [default]) and
+                     __contains__ may also be used
 
     Returns:
         RenamedSchema, a namedtuple that contains the ast of the renamed schema, and the map
-        of renamed type/root field names to original names. Any name that is unchanged will
-        not appear in the map.
+        of renamed type/root field names to original names. All names are included in the map,
+        even those that are unchanged
 
     Raises:
         GraphQLSyntaxError if input string cannot be parsed
@@ -206,11 +205,7 @@ class RenameSchemaTypesVisitor(Visitor):
         if name_string == self.query_type or name_string in self.scalar_types:
             return
 
-        # NOTE: bugged
-        if name_string not in self.rename_dict or self.rename_dict[name_string] == name_string:
-            return
-
-        new_name_string = self.rename_dict[name_string]
+        new_name_string = self.rename_dict.get(name_string, name_string)  # Default use original
 
         if (
             new_name_string in self.reverse_name_map and
@@ -279,10 +274,7 @@ class RenameRootFieldsVisitor(Visitor):
         if self.in_query_type:
             field_name = node.name.value
 
-            if field_name not in self.rename_dict or self.rename_dict[field_name] == field_name:
-                return
-
-            new_field_name = self.rename_dict[field_name]
+            new_field_name = self.rename_dict.get(field_name, field_name)  # Default use original
 
             if (
                 new_field_name in self.reverse_field_map and

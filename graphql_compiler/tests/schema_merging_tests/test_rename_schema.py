@@ -29,7 +29,7 @@ class TestRenameSchema(unittest.TestCase):
         renamed_schema = rename_schema(ISS.basic_schema, {})
 
         self.assertEqual(ISS.basic_schema, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({}, renamed_schema.reverse_name_map)
+        self.assertEqual({'Human': 'Human'}, renamed_schema.reverse_name_map)
 
     def test_basic_rename(self):
         renamed_schema = rename_schema(ISS.basic_schema, {'Human': 'NewHuman'})
@@ -130,7 +130,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewHuman': 'Human', 'NewCharacter': 'Character'},
+        self.assertEqual({'NewHuman': 'Human', 'NewCharacter': 'Character', 'Creature': 'Creature'},
                          renamed_schema.reverse_name_map)
 
     def test_scalar_rename(self):
@@ -182,7 +182,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewDroid': 'Droid', 'NewHumanOrDroid': 'HumanOrDroid'},
+        self.assertEqual({'NewDroid': 'Droid', 'NewHumanOrDroid': 'HumanOrDroid', 'Human': 'Human'},
                          renamed_schema.reverse_name_map)
 
     def test_list_rename(self):
@@ -278,7 +278,7 @@ class TestRenameSchema(unittest.TestCase):
             def __contains__(self, key):
                 return True
 
-            def __getitem__(self, key):
+            def get(self, key, default=None):
                 return 'OneType'
 
         with self.assertRaises(SchemaRenameConflictError):
@@ -493,7 +493,7 @@ class TestRenameSchema(unittest.TestCase):
             def __contains__(self, key):
                 return True
 
-            def __getitem__(self, key):
+            def get(self, key, default=None):
                 return 'New' + key
 
         renamed_schema = rename_schema(ISS.various_types_schema, AddNewDict())
