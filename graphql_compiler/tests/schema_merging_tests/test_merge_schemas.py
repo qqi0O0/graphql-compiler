@@ -3,9 +3,9 @@ from collections import OrderedDict
 from textwrap import dedent
 import unittest
 
-from graphql_compiler.schema_merging.merged_schema import MergedSchema
+from graphql_compiler.schema_merging.merge_schemas import merge_schemas
 from graphql_compiler.schema_merging.rename_schema import rename_schema
-from graphql_compiler.schema_merging.utils import SchemaError
+from graphql_compiler.schema_merging.utils import SchemaStructureError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 

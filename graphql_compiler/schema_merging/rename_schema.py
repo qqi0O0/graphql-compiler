@@ -47,7 +47,7 @@ def rename_schema(schema_string, rename_dict):
         GraphQLSyntaxError if input string cannot be parsed
         SchemaStructureError if the schema does not have the expected form; in particular, if
         the parsed ast does not represent a valid schema, if any root field does not have the
-        same name as the type that it queries, if the schema contains type definitions or
+        same name as the type that it queries, if the schema contains type extensions or
         input object definitions, or if the schema contains mutations or subscriptions
         SchemaRenameConflictError if there are conflicts between the renamed types or root fields
     """

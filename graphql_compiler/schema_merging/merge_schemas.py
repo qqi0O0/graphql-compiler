@@ -1,0 +1,224 @@
+# Copyright 2019-present Kensho Technologies, LLC.
+"""TODO:
+Always add in the stitch directive as a special case for now
+"""
+
+
+from collections import namedtuple
+import copy
+import six
+
+from graphql import parse
+from graphql.language import ast as ast_types
+from graphql.language.printer import print_ast
+from graphql.language.visitor import Visitor, visit
+from graphql.type import GraphQLScalarType
+
+from .utils import SchemaRenameConflictError, SchemaStructureError
+
+
+MergedSchema = namedtuple(
+    'MergedSchema', [
+        'schema_ast',  # type: Document, ast representing the merged schema
+        'name_id_map',  # type: Dict[str, str], type name to id of the schema the type is from
+    ]
+)
+
+
+def basic_schema_ast(query_type):
+    """Create a basic ast Document representing a nearly blank schema.
+
+    ast contains a single query type, whose name is the input string. The query type is
+    guaranteed to be the second entry of Document definitions. The query type has no fields.
+
+    Args:
+        query_type: str, name of the query type for the schema
+
+    Returns:
+        Document, representing a nearly blank schema
+    """
+    return ast_types.Document(
+        definitions=[
+            ast_types.SchemaDefinition(
+                operation_types=[
+                    ast_types.OperationTypeDefinition(
+                        operation='query',
+                        type=ast_types.NamedType(
+                            name=ast_types.Name(value=query_type)
+                        )
+                    )
+                ]
+            ),
+            ast_types.ObjectTypeDefinition(
+                name=ast_types.Name(value=query_type),
+                fields=[]
+            )
+        ]
+    )
+
+
+def merge_schemas(schemas_dict):
+    """Check that input schemas do not contain conflicting definitions, then merge.
+
+    Merged schema will contain all type, interface, enum, scalar, and directive definitions
+    from input schemas. Its root fields will be the union of all root fields from input
+    schemas.
+
+    Args:
+        schemas_dict: OrderedDict where keys are schema_identifiers, and values are
+                      strings describing schemas
+
+    Returns:
+        MergedSchema, a namedtuple that contains the ast of the merged schema, and the map
+        from names of types/root fields to the id of the schema that they came from
+
+    Raises:
+        GraphQLSyntaxError if a input schema string cannot be parsed
+        SchemaStructureError if the schema does not have the expected form; in particular, if 
+        the parsed ast does not represent a valid schema, if any root field does not have the
+        same name as the type that it queries, if the schema contains type extensions or
+        input object definitions, or if the schema contains mutations or subscriptions
+        SchemaRenameConflictError if there are conflicts between the names of
+        types/interfaces/enums/scalars, or conflicts between the definition of directives
+        with the same name
+    """
+    if len(schemas_dict) == 0:
+        raise ValueError("Expected a nonzero number of schemas to merge.")
+
+    query_type = 'RootSchemaQuery'
+    # NOTE: currently, the query type will always be named RootSchemaQuery
+    # could be changed so the user has an input, or by changed to always use the root query
+    # name in the first schema in the input
+    merged_schema_ast = basic_schema_ast(query_type)  # Document
+    merged_definitions = merged_schema_ast.definitions  # List[Node]
+    merged_root_fields = merged_definitions[1].fields  # List[FieldDefinition]
+
+    name_id_map = {}  # Dict[str, str], name of type/interface/enum/union to schema id
+    scalars = {'String', 'Int', 'Float', 'Boolean', 'ID'}  # Set[str], user defined + builtins
+    directives = {}  # Dict[str, DirectiveDefinition]
+
+    for schema_id, schema_string in schemas_dict:
+        # Parse and attempt to construct schema
+
+        # May raise GraphQLSyntaxError
+        cur_ast = parse(schema_string)
+
+        try:
+            cur_schema = build_ast_schema(cur_ast)
+        except Exception as e:
+            raise SchemaStructureError('Input is not a valid schema. Message: {}'.format(e))
+
+        # Check validity -- same checks as in rename
+        if cur_schema.get_mutation_type() is not None:
+            raise SchemaStructureError('Schema contains mutations.')
+
+        if cur_schema.get_subscription_type() is not None:
+            raise SchemaStructureError('Schema contains subscriptions.')
+
+        cur_query_type = get_query_type_name(cur_schema)
+
+        check_root_fields_name_match(cur_ast, cur_query_type)
+
+        # Merge cur_ast into merged_schema_ast
+        # Concatenate new scalars, new directive, and all type definitions
+        # Raise errors for conflicting scalars, directives, or types
+        new_definitions = cur_ast.definitions  # List[Node]
+        new_root_fields = None  # List[FieldDefinition]
+        for new_definition in new_definitions:
+            if isinstance(new_definition, ast_types.SchemaDefinition):
+                continue
+
+            new_name = new_definition.name.value
+
+            elif (
+                isinstance(new_definition, ast_types.ObjectTypeDefinition) and
+                new_name == cur_query_type
+            ):  # root type definition
+                new_root_fields = new_definition.fields  # List[FieldDefinition]
+
+            elif isinstance(new_definition, ast_types.ScalarTypeDefinition):
+                if new_name in scalars:  # existing scalar
+                    continue
+                if new_name in name_id_map:  # new scalar clashing with existing type
+                    raise SchemaRenameConflictError(
+                        'New scalar "{}" clashes with existing type.'.format(new_name)
+                    )
+                # new, valid scalar
+                merged_definitions.append(new_definition)  # Add to ast
+                scalars.add(new_name)
+
+            elif isinstance(new_definition, ast_types.DirectiveDefinition):
+                if new_name in directives:
+                    # if definitions agree, continue
+                    # TODO: check if directives have equality implemented
+                    # else, raise error
+                    pass
+                # new directive
+                merged_definitions.append(new_definition)  # Add to ast
+                directives[new_name] = new_definition
+
+            else:  # Generic type definition
+                if new_name in scalars:
+                # TODO: change SchemaRenameConflictError to SchemaNameConflictError
+                    raise SchemaRenameConflictError(
+                        'New type "{}" clashes with existing scalar.'.format(type_name)
+                    )
+                if new_name in name_id_map:
+                    raise SchemaRenameConflictError(
+                        'New type "{}" clashes with existing type.'.format(type_name)
+                    )
+                merged_definitions.append(new_definition)
+                name_id_map[new_name] = schema_id
+
+        # Concatenate all root fields
+        # Given that names of root fields agree with their queried types, and that types were
+        # merged without conflicts, root fields will also merge without conflicts and it is not
+        # necessary to check for identical names
+        if new_root_fields is None:
+            raise AssertionError('Root fields unexpected not found.')
+
+        merged_root_fields.extend(new_root_fields)
+
+        return MergedSchema(schema_ast=merged_schema_ast, name_id_map=name_id_map)
+
+
+def demangle_query(query_string, renamed_schema):
+    """Demangle all types in query_string from renames to originals.
+
+    Args:
+        query_string: str
+        renamed_schema: RenamedSchema, namedtuple containing the ast of the renamed schema, and
+                        a map of renamed names to original names
+
+    Raises:
+        Some other error
+
+    Returns:
+        query string where type names are demangled
+    """
+    ast = parse(query_string)
+    # need to translate back both root fields and types. how to distinguish?
+    # for example, maybe 'human: Human' got renamed to 'NewHuman: NewHuman' for some reason,
+    # which is perfectly legal. Which one does NewHuman mean?
+    # is it only the root of the query that can be a root field?
+    # some fields are not translated, such as alias or various non-root field names
+    visitor = DemangleQueryVisitor(self.reverse_name_id_map, self.reverse_root_field_id_map,
+                                   schema_identifier)
+    visit(ast, visitor)
+    return print_ast(ast)
+
+
+class DemangleQueryVisitor(Visitor):
+    def __init__(self, reverse_name_id_map, reverse_root_field_id_map, schema_identifier):
+        pass
+
+    # Want to rename two things: the first level selection set field names (root fields)
+    # and NamedTypes (e.g. in fragments)
+    # Should do those in two steps
+    # TODO
+    # First step doesn't need visitor. Just iterate over selection set like with dedup
+    # Second step uses very simple visitor that transforms all NamedTypes that are not scalars
+    # or builtins?
+
+
+# TODO: cross server edge descriptor
