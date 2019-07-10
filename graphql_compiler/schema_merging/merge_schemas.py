@@ -1,6 +1,7 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
 from copy import deepcopy
+from textwrap import dedent
 
 from graphql import build_ast_schema
 from graphql.language import ast as ast_types
@@ -33,7 +34,7 @@ def basic_schema_ast(query_type):
     Returns:
         Document, representing a nearly blank schema
     """
-    return ast_types.Document(
+    blank_ast = ast_types.Document(
         definitions=[
             ast_types.SchemaDefinition(
                 operation_types=[
@@ -41,16 +42,20 @@ def basic_schema_ast(query_type):
                         operation='query',
                         type=ast_types.NamedType(
                             name=ast_types.Name(value=query_type)
-                        )
+                        ),
                     )
-                ]
+                ],
+                directives=[],
             ),
             ast_types.ObjectTypeDefinition(
                 name=ast_types.Name(value=query_type),
-                fields=[]
-            )
+                fields=[],
+                interfaces=[],
+                directives=[],
+            ),
         ]
     )
+    return blank_ast
 
 
 def merge_schemas(schemas_dict):
@@ -141,8 +146,8 @@ def merge_schemas(schemas_dict):
                         continue
                     else:  # definitions disagree
                         raise SchemaNameConflictError(
-                            'Directive {} with definition {} has already been defined with '
-                            'definition {}.'.format(new_name, print_ast(new_definition),
+                            'Directive "{}" with definition "{}" has already been defined with '
+                            'definition "{}".'.format(new_name, print_ast(new_definition),
                                                     print_ast(directives[new_name]))
                         )
                 # new directive

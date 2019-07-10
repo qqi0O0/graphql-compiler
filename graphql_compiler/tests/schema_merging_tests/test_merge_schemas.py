@@ -24,10 +24,6 @@ class PrefixDict(object):
         return True
 
 
-# TODO: merge more than 2 schemas
-# TODO: check original schema not modified
-
-
 class TestMergeSchemas(unittest.TestCase):
     def test_no_rename_basic_merge(self):
         merged_schema = merge_schemas(
@@ -91,6 +87,57 @@ class TestMergeSchemas(unittest.TestCase):
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
         self.assertEqual({'FirstHuman': 'first', 'SecondHuman': 'second'},
                          merged_schema.name_id_map)
+
+    def test_multiple_merge(self):
+        merged_schema = merge_schemas(
+            OrderedDict({
+                'first': parse(ISS.basic_schema),
+                'second': parse(ISS.enum_schema),
+                'third': rename_schema(parse(ISS.interface_schema), {'Human': 'Human2'}).schema_ast,
+                'fourth': rename_schema(parse(ISS.scalar_schema), {'Human': 'Human3'}).schema_ast
+            })
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Droid: Droid
+              Character: Character
+              Human2: Human2
+              Human3: Human3
+            }
+
+            type Human {
+              id: String
+            }
+
+            type Droid {
+              height: Height
+            }
+
+            enum Height {
+              TALL
+              SHORT
+            }
+
+            interface Character {
+              id: String
+            }
+
+            type Human2 implements Character {
+              id: String
+            }
+
+            type Human3 {
+              birthday: Date
+            }
+
+            scalar Date
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
     def test_diff_query_type_name_merge(self):
         diff_query_type_schema = dedent('''\
@@ -383,4 +430,26 @@ class TestMergeSchemas(unittest.TestCase):
         self.assertEqual({'Human': 'first', 'Droid': 'first', 'Kid': 'second'},
                          merged_schema.name_id_map)
 
-    # TODO: same thing for directives that clash
+    def test_dedup_clashing_directives(self):
+        extra_directive_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            directive @stitch(out_name: String!) on FIELD
+
+            type Kid {
+              id: String
+            }
+
+            type SchemaQuery {
+              Kid: Kid
+            }
+        ''')
+        with self.assertRaises(SchemaNameConflictError):
+            merged_schema = merge_schemas(
+                OrderedDict({
+                    'first': parse(ISS.directive_schema),
+                    'second': parse(extra_directive_schema)
+                })
+            )
