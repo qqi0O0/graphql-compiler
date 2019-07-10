@@ -1,19 +1,14 @@
 # Copyright 2019-present Kensho Technologies, LLC.
-"""TODO:
-Always add in the stitch directive as a special case for now
-cross server edge descriptor
-"""
-
-
 from collections import namedtuple
+from copy import deepcopy
 
-from graphql import parse, build_ast_schema
+from graphql import build_ast_schema
 from graphql.language import ast as ast_types
+from graphql.language.printer import print_ast
 import six
 
 from .utils import (
-    SchemaNameConflictError, SchemaStructureError, get_query_type_name,
-    _check_ast_schema_valid
+    SchemaNameConflictError, SchemaStructureError, _check_ast_schema_valid, get_query_type_name
 )
 
 
@@ -67,16 +62,16 @@ def merge_schemas(schemas_dict):
 
     Args:
         schemas_dict: OrderedDict where keys are schema_identifiers, and values are
-                      strings describing schemas
+                      asts (Documents) describing schemas. The asts will not be modified by
+                      this function
 
     Returns:
         MergedSchema, a namedtuple that contains the ast of the merged schema, and the map
         from names of types/root fields to the id of the schema that they came from
 
     Raises:
-        GraphQLSyntaxError if a input schema string cannot be parsed
         SchemaStructureError if the schema does not have the expected form; in particular, if
-        the parsed ast does not represent a valid schema, if any root field does not have the
+        the ast does not represent a valid schema, if any root field does not have the
         same name as the type that it queries, if the schema contains type extensions or
         input object definitions, or if the schema contains mutations or subscriptions
         SchemaNameConflictError if there are conflicts between the names of
@@ -84,12 +79,12 @@ def merge_schemas(schemas_dict):
         with the same name
     """
     if len(schemas_dict) == 0:
-        raise ValueError("Expected a nonzero number of schemas to merge.")
+        raise ValueError('Expected a nonzero number of schemas to merge.')
 
     query_type = 'RootSchemaQuery'
     # NOTE: currently, the query type will always be named RootSchemaQuery
     # could be changed so the user has an input, or by changed to always use the root query
-    # name in the first schema in the input
+    # name in the first schema in the input, if desired
     merged_schema_ast = basic_schema_ast(query_type)  # Document
     merged_definitions = merged_schema_ast.definitions  # List[Node]
     merged_root_fields = merged_definitions[1].fields  # List[FieldDefinition]
@@ -98,11 +93,8 @@ def merge_schemas(schemas_dict):
     scalars = {'String', 'Int', 'Float', 'Boolean', 'ID'}  # Set[str], user defined + builtins
     directives = {}  # Dict[str, DirectiveDefinition]
 
-    for schema_id, schema_string in six.iteritems(schemas_dict):
-        # Parse and attempt to construct schema
-
-        # May raise GraphQLSyntaxError
-        cur_ast = parse(schema_string)
+    for cur_schema_id, cur_ast in six.iteritems(schemas_dict):
+        cur_ast = deepcopy(cur_ast)
 
         try:
             cur_schema = build_ast_schema(cur_ast)
@@ -133,7 +125,6 @@ def merge_schemas(schemas_dict):
 
             elif isinstance(new_definition, ast_types.ScalarTypeDefinition):
                 if new_name in scalars:  # existing scalar
-                    print('existing scalar')
                     continue
                 if new_name in name_id_map:  # new scalar clashing with existing type
                     raise SchemaNameConflictError(
@@ -146,25 +137,29 @@ def merge_schemas(schemas_dict):
             elif isinstance(new_definition, ast_types.DirectiveDefinition):
                 if new_name in directives:
                     # if definitions agree, continue
-                    # TODO: check if directives have equality implemented
-                    # else, raise error
-                    pass
+                    if new_definition == directives[new_name]:  # definitions agree
+                        continue
+                    else:  # definitions disagree
+                        raise SchemaNameConflictError(
+                            'Directive {} with definition {} has already been defined with '
+                            'definition {}.'.format(new_name, print_ast(new_definition),
+                                                    print_ast(directives[new_name]))
+                        )
                 # new directive
                 merged_definitions.append(new_definition)  # Add to ast
                 directives[new_name] = new_definition
 
             else:  # Generic type definition
                 if new_name in scalars:
-                    # TODO: change SchemaNameConflictError to SchemaNameConflictError
                     raise SchemaNameConflictError(
-                        'New type "{}" clashes with existing scalar.'.format(type_name)
+                        'New type "{}" clashes with existing scalar.'.format(new_name)
                     )
                 if new_name in name_id_map:
                     raise SchemaNameConflictError(
-                        'New type "{}" clashes with existing type.'.format(type_name)
+                        'New type "{}" clashes with existing type.'.format(new_name)
                     )
                 merged_definitions.append(new_definition)
-                name_id_map[new_name] = schema_id
+                name_id_map[new_name] = cur_schema_id
 
         # Concatenate all root fields
         # Given that names of root fields agree with their queried types, and that types were

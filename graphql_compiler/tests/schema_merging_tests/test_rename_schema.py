@@ -2,6 +2,7 @@
 from textwrap import dedent
 import unittest
 
+from graphql import parse
 from graphql.language.printer import print_ast
 from graphql.language.visitor_meta import QUERY_DOCUMENT_KEYS
 
@@ -26,13 +27,13 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual(all_types, type_sets_union)
 
     def test_no_rename(self):
-        renamed_schema = rename_schema(ISS.basic_schema, {})
+        renamed_schema = rename_schema(parse(ISS.basic_schema), {})
 
         self.assertEqual(ISS.basic_schema, print_ast(renamed_schema.schema_ast))
         self.assertEqual({'Human': 'Human'}, renamed_schema.reverse_name_map)
 
     def test_basic_rename(self):
-        renamed_schema = rename_schema(ISS.basic_schema, {'Human': 'NewHuman'})
+        renamed_schema = rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
@@ -50,7 +51,7 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_name_map)
 
     def test_enum_rename(self):
-        renamed_schema = rename_schema(ISS.enum_schema,
+        renamed_schema = rename_schema(parse(ISS.enum_schema),
                                        {'Droid': 'NewDroid', 'Height': 'NewHeight'})
         renamed_schema_string = dedent('''\
             schema {
@@ -75,7 +76,7 @@ class TestRenameSchema(unittest.TestCase):
                          renamed_schema.reverse_name_map)
 
     def test_interface_rename(self):
-        renamed_schema = rename_schema(ISS.interface_schema,
+        renamed_schema = rename_schema(parse(ISS.interface_schema),
                                        {'Human': 'NewHuman', 'Character': 'NewCharacter'})
         renamed_schema_string = dedent('''\
             schema {
@@ -101,7 +102,7 @@ class TestRenameSchema(unittest.TestCase):
 
     def test_interfaces_rename(self):
         renamed_schema = rename_schema(
-            ISS.interfaces_schema, {
+            parse(ISS.interfaces_schema), {
                 'Human': 'NewHuman', 'Character': 'NewCharacter', 'Creature': 'Creature'
             }
         )
@@ -135,7 +136,7 @@ class TestRenameSchema(unittest.TestCase):
 
     def test_scalar_rename(self):
         renamed_schema = rename_schema(
-            ISS.scalar_schema, {
+            parse(ISS.scalar_schema), {
                 'Human': 'NewHuman', 'Date': 'NewDate', 'String': 'NewString'
             }
         )
@@ -158,7 +159,7 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_name_map)
 
     def test_union_rename(self):
-        renamed_schema = rename_schema(ISS.union_schema,
+        renamed_schema = rename_schema(parse(ISS.union_schema),
                                        {'HumanOrDroid': 'NewHumanOrDroid', 'Droid': 'NewDroid'})
         renamed_schema_string = dedent('''\
             schema {
@@ -186,7 +187,7 @@ class TestRenameSchema(unittest.TestCase):
                          renamed_schema.reverse_name_map)
 
     def test_list_rename(self):
-        renamed_schema = rename_schema(ISS.list_schema,
+        renamed_schema = rename_schema(parse(ISS.list_schema),
                                        {'Droid': 'NewDroid', 'Character': 'NewCharacter',
                                         'Height': 'NewHeight', 'Date': 'NewDate',
                                         'id': 'NewId', 'String': 'NewString'})
@@ -224,7 +225,7 @@ class TestRenameSchema(unittest.TestCase):
                          renamed_schema.reverse_name_map)
 
     def test_non_null_rename(self):
-        renamed_schema = rename_schema(ISS.non_null_schema, {'Human': 'NewHuman'})
+        renamed_schema = rename_schema(parse(ISS.non_null_schema), {'Human': 'NewHuman'})
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
@@ -244,7 +245,7 @@ class TestRenameSchema(unittest.TestCase):
 
     def test_directive_rename(self):
         renamed_schema = rename_schema(
-            ISS.directive_schema, {
+            parse(ISS.directive_schema), {
                 'Human': 'NewHuman', 'Droid': 'NewDroid', 'stitch': 'NewStitch'
             }
         )
@@ -282,7 +283,7 @@ class TestRenameSchema(unittest.TestCase):
                 return 'OneType'
 
         with self.assertRaises(SchemaNameConflictError):
-            rename_schema(ISS.list_schema, ConstantDict())
+            rename_schema(parse(ISS.list_schema), ConstantDict())
 
     def test_clashing_type_rename(self):
         schema_string = dedent('''\
@@ -305,7 +306,7 @@ class TestRenameSchema(unittest.TestCase):
         ''')
 
         with self.assertRaises(SchemaNameConflictError):
-            rename_schema(schema_string, {'Human1': 'Human', 'Human2': 'Human'})
+            rename_schema(parse(schema_string), {'Human1': 'Human', 'Human2': 'Human'})
 
     def test_clashing_type_single_rename(self):
         schema_string = dedent('''\
@@ -328,7 +329,7 @@ class TestRenameSchema(unittest.TestCase):
         ''')
 
         with self.assertRaises(SchemaNameConflictError):
-            rename_schema(schema_string, {'Human2': 'Human'})
+            rename_schema(parse(schema_string), {'Human2': 'Human'})
 
     def test_clashing_type_one_unchanged_rename(self):
         schema_string = dedent('''\
@@ -351,7 +352,7 @@ class TestRenameSchema(unittest.TestCase):
         ''')
 
         with self.assertRaises(SchemaNameConflictError):
-            rename_schema(schema_string, {'Human': 'Human', 'Human2': 'Human'})
+            rename_schema(parse(schema_string), {'Human': 'Human', 'Human2': 'Human'})
 
     def test_clashing_scalar_type_rename(self):
         schema_string = dedent('''\
@@ -371,7 +372,7 @@ class TestRenameSchema(unittest.TestCase):
         ''')
 
         with self.assertRaises(SchemaNameConflictError):
-            rename_schema(schema_string, {'Human': 'SCALAR'})
+            rename_schema(parse(schema_string), {'Human': 'SCALAR'})
 
     def test_builtin_type_conflict_rename(self):
         schema_string = dedent('''\
@@ -389,7 +390,7 @@ class TestRenameSchema(unittest.TestCase):
         ''')
 
         with self.assertRaises(SchemaNameConflictError):
-            rename_schema(schema_string, {'Human': 'String'})
+            rename_schema(parse(schema_string), {'Human': 'String'})
 
     def test_schema_extension(self):
         schema_string = dedent('''\
@@ -410,7 +411,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         with self.assertRaises(SchemaStructureError):
-            rename_schema(schema_string, {})
+            rename_schema(parse(schema_string), {})
 
     def test_input_type_definition(self):
         schema_string = dedent('''\
@@ -427,7 +428,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         with self.assertRaises(SchemaStructureError):
-            rename_schema(schema_string, {})
+            rename_schema(parse(schema_string), {})
 
     def test_mutation_definition(self):
         schema_string = dedent('''\
@@ -445,7 +446,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         with self.assertRaises(SchemaStructureError):
-            rename_schema(schema_string, {})
+            rename_schema(parse(schema_string), {})
 
     def test_subscription_definition(self):
         schema_string = dedent('''\
@@ -463,7 +464,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         with self.assertRaises(SchemaStructureError):
-            rename_schema(schema_string, {})
+            rename_schema(parse(schema_string), {})
 
     def test_inconsistent_root_field_name(self):
         schema_string = dedent('''\
@@ -486,7 +487,7 @@ class TestRenameSchema(unittest.TestCase):
         ''')
 
         with self.assertRaises(SchemaStructureError):
-            rename_schema(schema_string, {})
+            rename_schema(parse(schema_string), {})
 
     def test_various_types_rename(self):
         class AddNewDict(object):
@@ -496,7 +497,7 @@ class TestRenameSchema(unittest.TestCase):
             def get(self, key, default=None):
                 return 'New' + key
 
-        renamed_schema = rename_schema(ISS.various_types_schema, AddNewDict())
+        renamed_schema = rename_schema(parse(ISS.various_types_schema), AddNewDict())
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
