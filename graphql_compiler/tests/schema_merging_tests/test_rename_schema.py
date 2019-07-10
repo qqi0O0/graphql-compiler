@@ -6,7 +6,7 @@ from graphql.language.printer import print_ast
 from graphql.language.visitor_meta import QUERY_DOCUMENT_KEYS
 
 from graphql_compiler.schema_merging.rename_schema import RenameSchemaTypesVisitor, rename_schema
-from graphql_compiler.schema_merging.utils import SchemaRenameConflictError, SchemaStructureError
+from graphql_compiler.schema_merging.utils import SchemaNameConflictError, SchemaStructureError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
@@ -281,7 +281,7 @@ class TestRenameSchema(unittest.TestCase):
             def get(self, key, default=None):
                 return 'OneType'
 
-        with self.assertRaises(SchemaRenameConflictError):
+        with self.assertRaises(SchemaNameConflictError):
             rename_schema(ISS.list_schema, ConstantDict())
 
     def test_clashing_type_rename(self):
@@ -304,7 +304,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaRenameConflictError):
+        with self.assertRaises(SchemaNameConflictError):
             rename_schema(schema_string, {'Human1': 'Human', 'Human2': 'Human'})
 
     def test_clashing_type_single_rename(self):
@@ -327,7 +327,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaRenameConflictError):
+        with self.assertRaises(SchemaNameConflictError):
             rename_schema(schema_string, {'Human2': 'Human'})
 
     def test_clashing_type_one_unchanged_rename(self):
@@ -350,7 +350,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaRenameConflictError):
+        with self.assertRaises(SchemaNameConflictError):
             rename_schema(schema_string, {'Human': 'Human', 'Human2': 'Human'})
 
     def test_clashing_scalar_type_rename(self):
@@ -370,7 +370,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaRenameConflictError):
+        with self.assertRaises(SchemaNameConflictError):
             rename_schema(schema_string, {'Human': 'SCALAR'})
 
     def test_builtin_type_conflict_rename(self):
@@ -388,7 +388,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
 
-        with self.assertRaises(SchemaRenameConflictError):
+        with self.assertRaises(SchemaNameConflictError):
             rename_schema(schema_string, {'Human': 'String'})
 
     def test_schema_extension(self):

@@ -1,6 +1,7 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 """TODO:
 Always add in the stitch directive as a special case for now
+cross server edge descriptor
 """
 
 
@@ -11,15 +12,15 @@ from graphql.language import ast as ast_types
 import six
 
 from .utils import (
-    SchemaRenameConflictError, SchemaStructureError, get_query_type_name,
-    check_root_fields_name_match
+    SchemaNameConflictError, SchemaStructureError, get_query_type_name,
+    _check_ast_schema_valid
 )
 
 
 MergedSchema = namedtuple(
     'MergedSchema', [
-        'schema_ast',  # type: Document, ast representing the merged schema
-        'name_id_map',  # type: Dict[str, str], type name to id of the schema the type is from
+        'schema_ast',  # Document, ast representing the merged schema
+        'name_id_map',  # Dict[str, str], type name to id of the schema the type is from
     ]
 )
 
@@ -28,7 +29,8 @@ def basic_schema_ast(query_type):
     """Create a basic ast Document representing a nearly blank schema.
 
     ast contains a single query type, whose name is the input string. The query type is
-    guaranteed to be the second entry of Document definitions. The query type has no fields.
+    guaranteed to be the second entry of Document definitions, after the schema definition.
+    The query type has no fields.
 
     Args:
         query_type: str, name of the query type for the schema
@@ -77,7 +79,7 @@ def merge_schemas(schemas_dict):
         the parsed ast does not represent a valid schema, if any root field does not have the
         same name as the type that it queries, if the schema contains type extensions or
         input object definitions, or if the schema contains mutations or subscriptions
-        SchemaRenameConflictError if there are conflicts between the names of
+        SchemaNameConflictError if there are conflicts between the names of
         types/interfaces/enums/scalars, or conflicts between the definition of directives
         with the same name
     """
@@ -107,16 +109,10 @@ def merge_schemas(schemas_dict):
         except Exception as e:
             raise SchemaStructureError('Input is not a valid schema. Message: {}'.format(e))
 
-        # Check validity -- same checks as in rename
-        if cur_schema.get_mutation_type() is not None:
-            raise SchemaStructureError('Schema contains mutations.')
-
-        if cur_schema.get_subscription_type() is not None:
-            raise SchemaStructureError('Schema contains subscriptions.')
+        # Check additional structural requirements
+        _check_ast_schema_valid(cur_ast, cur_schema)
 
         cur_query_type = get_query_type_name(cur_schema)
-
-        check_root_fields_name_match(cur_ast, cur_query_type)
 
         # Merge cur_ast into merged_schema_ast
         # Concatenate new scalars, new directive, and all type definitions
@@ -140,7 +136,7 @@ def merge_schemas(schemas_dict):
                     print('existing scalar')
                     continue
                 if new_name in name_id_map:  # new scalar clashing with existing type
-                    raise SchemaRenameConflictError(
+                    raise SchemaNameConflictError(
                         'New scalar "{}" clashes with existing type.'.format(new_name)
                     )
                 # new, valid scalar
@@ -159,12 +155,12 @@ def merge_schemas(schemas_dict):
 
             else:  # Generic type definition
                 if new_name in scalars:
-                    # TODO: change SchemaRenameConflictError to SchemaNameConflictError
-                    raise SchemaRenameConflictError(
+                    # TODO: change SchemaNameConflictError to SchemaNameConflictError
+                    raise SchemaNameConflictError(
                         'New type "{}" clashes with existing scalar.'.format(type_name)
                     )
                 if new_name in name_id_map:
-                    raise SchemaRenameConflictError(
+                    raise SchemaNameConflictError(
                         'New type "{}" clashes with existing type.'.format(type_name)
                     )
                 merged_definitions.append(new_definition)
@@ -180,8 +176,3 @@ def merge_schemas(schemas_dict):
         merged_root_fields.extend(new_root_fields)
 
     return MergedSchema(schema_ast=merged_schema_ast, name_id_map=name_id_map)
-
-
-
-
-# TODO: cross server edge descriptor
