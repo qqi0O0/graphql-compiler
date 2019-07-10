@@ -447,7 +447,7 @@ class TestMergeSchemas(unittest.TestCase):
             }
         ''')
         with self.assertRaises(SchemaNameConflictError):
-            merged_schema = merge_schemas(
+            merge_schemas(
                 OrderedDict({
                     'first': parse(ISS.directive_schema),
                     'second': parse(extra_directive_schema)

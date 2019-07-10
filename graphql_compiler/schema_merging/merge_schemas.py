@@ -1,7 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
 from copy import deepcopy
-from textwrap import dedent
 
 from graphql import build_ast_schema
 from graphql.language import ast as ast_types
@@ -112,7 +111,7 @@ def merge_schemas(schemas_dict):
         cur_query_type = get_query_type_name(cur_schema)
 
         # Merge cur_ast into merged_schema_ast
-        # Concatenate new scalars, new directive, and all type definitions
+        # Concatenate new scalars, new directive, and all type definitions to merged_definitions
         # Raise errors for conflicting scalars, directives, or types
         new_definitions = cur_ast.definitions  # List[Node]
         new_root_fields = None  # List[FieldDefinition]
@@ -148,7 +147,7 @@ def merge_schemas(schemas_dict):
                         raise SchemaNameConflictError(
                             'Directive "{}" with definition "{}" has already been defined with '
                             'definition "{}".'.format(new_name, print_ast(new_definition),
-                                                    print_ast(directives[new_name]))
+                                                      print_ast(directives[new_name]))
                         )
                 # new directive
                 merged_definitions.append(new_definition)  # Add to ast
