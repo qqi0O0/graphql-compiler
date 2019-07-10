@@ -25,6 +25,7 @@ class PrefixDict(object):
 
 
 # TODO: merge more than 2 schemas
+# TODO: check original schema not modified
 
 
 class TestMergeSchemas(unittest.TestCase):

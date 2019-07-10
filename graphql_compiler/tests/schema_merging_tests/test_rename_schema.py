@@ -50,6 +50,11 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
         self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_name_map)
 
+    def test_original_unmodified(self):
+        original_ast = parse(ISS.basic_schema)
+        rename_schema(original_ast, {'Human': 'NewHuman'})
+        self.assertEqual(original_ast, parse(ISS.basic_schema))
+
     def test_enum_rename(self):
         renamed_schema = rename_schema(parse(ISS.enum_schema),
                                        {'Droid': 'NewDroid', 'Height': 'NewHeight'})
