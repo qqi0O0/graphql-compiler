@@ -5,16 +5,15 @@ Always add in the stitch directive as a special case for now
 
 
 from collections import namedtuple
-import copy
+
+from graphql import parse, build_ast_schema
+from graphql.language import ast as ast_types
 import six
 
-from graphql import parse
-from graphql.language import ast as ast_types
-from graphql.language.printer import print_ast
-from graphql.language.visitor import Visitor, visit
-from graphql.type import GraphQLScalarType
-
-from .utils import SchemaRenameConflictError, SchemaStructureError
+from .utils import (
+    SchemaRenameConflictError, SchemaStructureError, get_query_type_name,
+    check_root_fields_name_match
+)
 
 
 MergedSchema = namedtuple(
@@ -74,7 +73,7 @@ def merge_schemas(schemas_dict):
 
     Raises:
         GraphQLSyntaxError if a input schema string cannot be parsed
-        SchemaStructureError if the schema does not have the expected form; in particular, if 
+        SchemaStructureError if the schema does not have the expected form; in particular, if
         the parsed ast does not represent a valid schema, if any root field does not have the
         same name as the type that it queries, if the schema contains type extensions or
         input object definitions, or if the schema contains mutations or subscriptions
@@ -97,7 +96,7 @@ def merge_schemas(schemas_dict):
     scalars = {'String', 'Int', 'Float', 'Boolean', 'ID'}  # Set[str], user defined + builtins
     directives = {}  # Dict[str, DirectiveDefinition]
 
-    for schema_id, schema_string in schemas_dict:
+    for schema_id, schema_string in six.iteritems(schemas_dict):
         # Parse and attempt to construct schema
 
         # May raise GraphQLSyntaxError
@@ -130,7 +129,7 @@ def merge_schemas(schemas_dict):
 
             new_name = new_definition.name.value
 
-            elif (
+            if (
                 isinstance(new_definition, ast_types.ObjectTypeDefinition) and
                 new_name == cur_query_type
             ):  # root type definition
@@ -138,6 +137,7 @@ def merge_schemas(schemas_dict):
 
             elif isinstance(new_definition, ast_types.ScalarTypeDefinition):
                 if new_name in scalars:  # existing scalar
+                    print('existing scalar')
                     continue
                 if new_name in name_id_map:  # new scalar clashing with existing type
                     raise SchemaRenameConflictError(
@@ -159,7 +159,7 @@ def merge_schemas(schemas_dict):
 
             else:  # Generic type definition
                 if new_name in scalars:
-                # TODO: change SchemaRenameConflictError to SchemaNameConflictError
+                    # TODO: change SchemaRenameConflictError to SchemaNameConflictError
                     raise SchemaRenameConflictError(
                         'New type "{}" clashes with existing scalar.'.format(type_name)
                     )
@@ -179,46 +179,9 @@ def merge_schemas(schemas_dict):
 
         merged_root_fields.extend(new_root_fields)
 
-        return MergedSchema(schema_ast=merged_schema_ast, name_id_map=name_id_map)
+    return MergedSchema(schema_ast=merged_schema_ast, name_id_map=name_id_map)
 
 
-def demangle_query(query_string, renamed_schema):
-    """Demangle all types in query_string from renames to originals.
-
-    Args:
-        query_string: str
-        renamed_schema: RenamedSchema, namedtuple containing the ast of the renamed schema, and
-                        a map of renamed names to original names
-
-    Raises:
-        Some other error
-
-    Returns:
-        query string where type names are demangled
-    """
-    ast = parse(query_string)
-    # need to translate back both root fields and types. how to distinguish?
-    # for example, maybe 'human: Human' got renamed to 'NewHuman: NewHuman' for some reason,
-    # which is perfectly legal. Which one does NewHuman mean?
-    # is it only the root of the query that can be a root field?
-    # some fields are not translated, such as alias or various non-root field names
-    visitor = DemangleQueryVisitor(self.reverse_name_id_map, self.reverse_root_field_id_map,
-                                   schema_identifier)
-    visit(ast, visitor)
-    return print_ast(ast)
-
-
-class DemangleQueryVisitor(Visitor):
-    def __init__(self, reverse_name_id_map, reverse_root_field_id_map, schema_identifier):
-        pass
-
-    # Want to rename two things: the first level selection set field names (root fields)
-    # and NamedTypes (e.g. in fragments)
-    # Should do those in two steps
-    # TODO
-    # First step doesn't need visitor. Just iterate over selection set like with dedup
-    # Second step uses very simple visitor that transforms all NamedTypes that are not scalars
-    # or builtins?
 
 
 # TODO: cross server edge descriptor
