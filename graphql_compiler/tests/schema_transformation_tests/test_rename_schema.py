@@ -34,7 +34,7 @@ class TestRenameSchema(unittest.TestCase):
         renamed_schema = rename_schema(parse(ISS.basic_schema), {})
 
         self.assertEqual(ISS.basic_schema, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'Human': 'Human'}, renamed_schema.reverse_name_map)
+        self.assertEqual({}, renamed_schema.reverse_name_map)
 
     def test_basic_rename(self):
         renamed_schema = rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
@@ -140,7 +140,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewHuman': 'Human', 'NewCharacter': 'Character', 'Creature': 'Creature'},
+        self.assertEqual({'NewHuman': 'Human', 'NewCharacter': 'Character'},
                          renamed_schema.reverse_name_map)
 
     def test_scalar_rename(self):
@@ -192,7 +192,7 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewDroid': 'Droid', 'NewHumanOrDroid': 'HumanOrDroid', 'Human': 'Human'},
+        self.assertEqual({'NewDroid': 'Droid', 'NewHumanOrDroid': 'HumanOrDroid'},
                          renamed_schema.reverse_name_map)
 
     def test_list_rename(self):
