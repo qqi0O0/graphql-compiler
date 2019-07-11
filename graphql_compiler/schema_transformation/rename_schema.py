@@ -1,10 +1,10 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
 from copy import deepcopy
-import six
 
 from graphql import build_ast_schema
 from graphql.language.visitor import Visitor, visit
+import six
 
 from .utils import (
     SchemaNameConflictError, SchemaStructureError, check_ast_schema_is_valid, get_query_type_name,
@@ -50,20 +50,8 @@ def rename_schema(ast, renamings):
         input object definitions, or if the schema contains mutations or subscriptions
         SchemaNameConflictError if there are conflicts between the renamed types or fields
     """
-    # Possibility: provide extra callback function that's something like check_unused_args in 
-    # the python string formatter?
-
-    # TODO: Check input dict is invertible
-    # TODO: Check all types in the dict are used (aka all are inside typemap and are not scalars)
-    # this might simplify error checking significantly
-    # mapping A -> A is allowed
-    # Downside: doing namespace prefix renaming is much harder
-    # if I do a conditional depending on whether the input is a dict/has an iter method, that
-    # seems overly complex -- I need to write both versions of getting the reverse name map
-    # well, I don't have to. But still, which one do I check? __iter__? keys?
-    # if I don't do the conditional, then I don't support the dict like objects for namespacing
-    # but for normal dicts, checking for name conflicts is more straightforward.
-
+    # Option: restrict that the input dictionary has all of its entries used, if it has an
+    # __iter__ or keys()?
     ast = deepcopy(ast)
 
     # Check that the AST can be built into a valid schema
@@ -86,7 +74,6 @@ def rename_schema(ast, renamings):
         for renamed_name, original_name in six.iteritems(reverse_name_map)
         if renamed_name != original_name
     }
-
 
     # Rename query type fields
     _rename_query_type_fields(ast, renamings, query_type)
@@ -157,8 +144,8 @@ class RenameSchemaTypesVisitor(Visitor):
         'FloatValue',
         'InputValueDefinition',
         'IntValue',
-        'ListValue',
         'ListType',
+        'ListValue',
         'Name',
         'NonNullType',
         'OperationTypeDefinition',
@@ -209,7 +196,7 @@ class RenameSchemaTypesVisitor(Visitor):
         self.builtin_types = frozenset({'String', 'Int', 'Float', 'Boolean', 'ID'})
 
     def _rename_name_and_add_to_record(self, node):
-        """Rename the value of the node, and add the name mapping to reverse_name_map.
+        """Rename the value of the node, and add the name pair to reverse_name_map.
 
         Don't rename if the type is the query type, a scalar type, or a builtin type.
 
@@ -299,7 +286,7 @@ class RenameQueryTypeFieldsVisitor(Visitor):
             self.in_query_type = False
 
     def enter_FieldDefinition(self, node, *args):
-        """If inside the query type, rename the field and add its name to reverse map."""
+        """If inside the query type, rename field and add the name pair to reverse_field_map."""
         if self.in_query_type:
             field_name = node.name.value
 
