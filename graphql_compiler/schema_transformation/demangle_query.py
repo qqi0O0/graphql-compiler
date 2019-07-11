@@ -1,3 +1,6 @@
+# Copyright 2019-present Kensho Technologies, LLC.
+from graphql import parse
+from graphql.language.visitor import Visitor, visit
 
 
 def demangle_query(query_string, renamed_schema):
@@ -15,11 +18,8 @@ def demangle_query(query_string, renamed_schema):
         query string where type names are demangled
     """
     ast = parse(query_string)
-    # need to translate back both root fields and types. how to distinguish?
-    # for example, maybe 'human: Human' got renamed to 'NewHuman: NewHuman' for some reason,
-    # which is perfectly legal. Which one does NewHuman mean?
-    # is it only the root of the query that can be a root field?
     # some fields are not translated, such as alias or various non-root field names
+    # how to tell?
     visitor = DemangleQueryVisitor(self.reverse_name_id_map, self.reverse_root_field_id_map,
                                    schema_identifier)
     visit(ast, visitor)

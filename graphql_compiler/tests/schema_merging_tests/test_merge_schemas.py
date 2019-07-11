@@ -6,9 +6,11 @@ import unittest
 from graphql import parse
 from graphql.language.printer import print_ast
 
-from graphql_compiler.schema_merging.merge_schemas import merge_schemas
-from graphql_compiler.schema_merging.rename_schema import rename_schema
-from graphql_compiler.schema_merging.utils import SchemaNameConflictError, SchemaStructureError
+from graphql_compiler.schema_transformation.merge_schemas import merge_schemas
+from graphql_compiler.schema_transformation.rename_schema import rename_schema
+from graphql_compiler.schema_transformation.utils import (
+    SchemaNameConflictError, SchemaStructureError
+)
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
