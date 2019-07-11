@@ -114,7 +114,6 @@ class InputSchemaStrings(object):
         type SchemaQuery {
           Human: Human
           Droid: Droid
-          HumanOrDroid: HumanOrDroid
         }
     ''')
 

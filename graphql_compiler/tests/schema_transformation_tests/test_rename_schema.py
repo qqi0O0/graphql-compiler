@@ -189,7 +189,6 @@ class TestRenameSchema(unittest.TestCase):
             type SchemaQuery {
               Human: Human
               NewDroid: NewDroid
-              NewHumanOrDroid: NewHumanOrDroid
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
@@ -197,10 +196,12 @@ class TestRenameSchema(unittest.TestCase):
                          renamed_schema.reverse_name_map)
 
     def test_list_rename(self):
-        renamed_schema = rename_schema(parse(ISS.list_schema),
-                                       {'Droid': 'NewDroid', 'Character': 'NewCharacter',
-                                        'Height': 'NewHeight', 'Date': 'NewDate',
-                                        'id': 'NewId', 'String': 'NewString'})
+        renamed_schema = rename_schema(
+            parse(ISS.list_schema), {
+                'Droid': 'NewDroid', 'Character': 'NewCharacter', 'Height': 'NewHeight',
+                'Date': 'NewDate', 'id': 'NewId', 'String': 'NewString'
+            }
+        )
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
@@ -230,9 +231,10 @@ class TestRenameSchema(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewCharacter': 'Character', 'NewDroid': 'Droid',
-                          'NewHeight': 'Height'},
-                         renamed_schema.reverse_name_map)
+        self.assertEqual(
+            {'NewCharacter': 'Character', 'NewDroid': 'Droid', 'NewHeight': 'Height'},
+            renamed_schema.reverse_name_map
+        )
 
     def test_non_null_rename(self):
         renamed_schema = rename_schema(parse(ISS.non_null_schema), {'Human': 'NewHuman'})
