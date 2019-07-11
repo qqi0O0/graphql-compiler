@@ -4,12 +4,12 @@ from graphql.language.visitor import Visitor, visit
 from graphql.type.definition import GraphQLScalarType
 
 
-class SchemaError(Exception):
+class SchemaTransformError(Exception):
     """Parent of specific error classes."""
 
 
-class SchemaStructureError(SchemaError):
-    """Raised if a schema's structure is illegal.
+class SchemaStructureError(SchemaTransformError):
+    """Raised if an input schema's structure is illegal.
 
     This may happen if an AST cannot be built into a schema, if the schema contains disallowed
     components, or if the schema contains some field of the query type that is named differently
@@ -17,7 +17,7 @@ class SchemaStructureError(SchemaError):
     """
 
 
-class SchemaNameConflictError(SchemaError):
+class SchemaNameConflictError(SchemaTransformError):
     """Raised when renaming types or fields cause name conflicts."""
 
 
