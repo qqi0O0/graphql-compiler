@@ -10,7 +10,7 @@ from graphql_compiler.schema_transformation.rename_schema import (
     RenameSchemaTypesVisitor, rename_schema
 )
 from graphql_compiler.schema_transformation.utils import (
-    SchemaNameConflictError, SchemaStructureError, InvalidNameError
+    InvalidNameError, SchemaNameConflictError, SchemaStructureError
 )
 
 from .input_schema_strings import InputSchemaStrings as ISS

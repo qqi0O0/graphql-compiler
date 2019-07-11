@@ -31,4 +31,3 @@ class TestDemangleQuery(unittest.TestCase):
     # TODO:
     # Introspection queries -- builtin types and root fields
     # aliases
-
