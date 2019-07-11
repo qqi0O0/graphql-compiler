@@ -147,7 +147,7 @@ def merge_schemas(schemas_dict):
                     else:  # definitions disagree
                         raise SchemaNameConflictError(
                             u'Directive "{}" with definition "{}" has already been defined with '
-                            'definition "{}".'.format(new_name, print_ast(new_definition),
+                            u'definition "{}".'.format(new_name, print_ast(new_definition),
                                                       print_ast(directives[new_name]))
                         )
                 # new directive
