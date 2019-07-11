@@ -91,7 +91,7 @@ class CheckQueryTypeFieldsNameMatchVisitor(Visitor):
             queried_type_name = type_node.name.value
             if field_name != queried_type_name:
                 raise SchemaStructureError(
-                    'Query type\'s field name "{}" does not match corresponding queried type '
+                    u'Query type\'s field name "{}" does not match corresponding queried type '
                     'name "{}"'.format(field_name, queried_type_name)
                 )
 
@@ -126,9 +126,9 @@ def check_ast_schema_is_valid(ast, schema):
         query type field name does not match the type it queries.
     """
     if schema.get_mutation_type() is not None:
-        raise SchemaStructureError('Schema contains mutations.')
+        raise SchemaStructureError(u'Schema contains mutations.')
     if schema.get_subscription_type() is not None:
-        raise SchemaStructureError('Schema contains subscriptions.')
+        raise SchemaStructureError(u'Schema contains subscriptions.')
 
     query_type = get_query_type_name(schema)
 

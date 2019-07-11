@@ -85,7 +85,7 @@ def merge_schemas(schemas_dict):
         with the same name
     """
     if len(schemas_dict) == 0:
-        raise ValueError('Expected a nonzero number of schemas to merge.')
+        raise ValueError(u'Expected a nonzero number of schemas to merge.')
 
     query_type = 'RootSchemaQuery'
     # NOTE: currently, the query type will always be named RootSchemaQuery
@@ -105,7 +105,7 @@ def merge_schemas(schemas_dict):
         try:
             cur_schema = build_ast_schema(cur_ast)
         except Exception as e:
-            raise SchemaStructureError('Input is not a valid schema. Message: {}'.format(e))
+            raise SchemaStructureError(u'Input is not a valid schema. Message: {}'.format(e))
 
         # Check additional structural requirements
         check_ast_schema_is_valid(cur_ast, cur_schema)
@@ -134,7 +134,7 @@ def merge_schemas(schemas_dict):
                     continue
                 if new_name in name_id_map:  # new scalar clashing with existing type
                     raise SchemaNameConflictError(
-                        'New scalar "{}" clashes with existing type.'.format(new_name)
+                        u'New scalar "{}" clashes with existing type.'.format(new_name)
                     )
                 # new, valid scalar
                 merged_definitions.append(new_definition)  # Add to AST
@@ -146,7 +146,7 @@ def merge_schemas(schemas_dict):
                         continue
                     else:  # definitions disagree
                         raise SchemaNameConflictError(
-                            'Directive "{}" with definition "{}" has already been defined with '
+                            u'Directive "{}" with definition "{}" has already been defined with '
                             'definition "{}".'.format(new_name, print_ast(new_definition),
                                                       print_ast(directives[new_name]))
                         )
@@ -157,11 +157,11 @@ def merge_schemas(schemas_dict):
             else:  # Generic type definition
                 if new_name in scalars:
                     raise SchemaNameConflictError(
-                        'New type "{}" clashes with existing scalar.'.format(new_name)
+                        u'New type "{}" clashes with existing scalar.'.format(new_name)
                     )
                 if new_name in name_id_map:
                     raise SchemaNameConflictError(
-                        'New type "{}" clashes with existing type.'.format(new_name)
+                        u'New type "{}" clashes with existing type.'.format(new_name)
                     )
                 merged_definitions.append(new_definition)
                 name_id_map[new_name] = cur_schema_id
@@ -171,7 +171,7 @@ def merge_schemas(schemas_dict):
         # were merged without conflicts, query type fields will also merge without conflicts
         # and it is not necessary to check for identical names
         if new_query_type_fields is None:
-            raise AssertionError('Query type field definitions unexpected not found.')
+            raise AssertionError(u'Query type field definitions unexpected not found.')
 
         merged_query_type_fields.extend(new_query_type_fields)
 
