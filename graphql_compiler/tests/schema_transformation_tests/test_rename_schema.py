@@ -286,14 +286,6 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual({'NewHuman': 'Human', 'NewDroid': 'Droid'},
                          renamed_schema.reverse_name_map)
 
-    def test_all_clashing_rename(self):
-        class ConstantDict(object):
-            def get(self, key, default=None):
-                return 'OneType'
-
-        with self.assertRaises(SchemaNameConflictError):
-            rename_schema(parse(ISS.list_schema), ConstantDict())
-
     def test_clashing_type_rename(self):
         schema_string = dedent('''\
             schema {
@@ -592,12 +584,12 @@ class TestRenameSchema(unittest.TestCase):
         with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(schema_string), {})
 
-    def test_various_types_rename(self):
-        class AddNewDict(object):
+    def test_rename_using_dict_like_prefixer_class(self):
+        class PrefixNewDict(object):
             def get(self, key, default=None):
                 return 'New' + key
 
-        renamed_schema = rename_schema(parse(ISS.various_types_schema), AddNewDict())
+        renamed_schema = rename_schema(parse(ISS.various_types_schema), PrefixNewDict())
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
