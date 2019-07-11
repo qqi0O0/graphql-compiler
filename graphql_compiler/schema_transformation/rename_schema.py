@@ -49,8 +49,6 @@ def rename_schema(ast, renamings):
         input object definitions, or if the schema contains mutations or subscriptions
         SchemaNameConflictError if there are conflicts between the renamed types or fields
     """
-    # Option: restrict that the input dictionary has all of its entries used, if it has an
-    # __iter__ or keys()?
     ast = deepcopy(ast)
 
     # Check that the AST can be built into a valid schema

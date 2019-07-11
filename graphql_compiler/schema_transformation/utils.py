@@ -44,12 +44,14 @@ def check_name_is_valid(name):
         InvalidNameError if the name doesn't consist of only alphanumeric characters and
         underscores, starts with a numeric character, or starts with double underscores
     """
+    if not isinstance(name, str):
+        raise InvalidNameError(u'Name "{}" is not a string.'.format(name))
     pattern = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
     if not pattern.match(name):
         raise InvalidNameError(u'"{}" is not a valid GraphQL name.'.format(name))
     if name.startswith('__'):
         raise InvalidNameError(u'"{}" starts with two underscores, which is reserved for '
-                               'GraphQL internal use and is not allowed.'.format(name))
+                               u'GraphQL internal use and is not allowed.'.format(name))
 
 
 def get_query_type_name(schema):
@@ -80,8 +82,8 @@ def get_scalar_names(schema):
     type_map = schema.get_type_map()
     scalars = {
         type_name
-        for type_name in type_map
-        if isinstance(type_map[type_name], GraphQLScalarType)
+        for type_name, type_object in six.iteritems(type_map)
+        if isinstance(type_object, GraphQLScalarType)
     }
     return scalars
 
@@ -127,7 +129,7 @@ class CheckQueryTypeFieldsNameMatchVisitor(Visitor):
             if field_name != queried_type_name:
                 raise SchemaStructureError(
                     u'Query type\'s field name "{}" does not match corresponding queried type '
-                    'name "{}"'.format(field_name, queried_type_name)
+                    u'name "{}"'.format(field_name, queried_type_name)
                 )
 
 
@@ -161,9 +163,13 @@ def check_ast_schema_is_valid(ast, schema):
         query type field name does not match the type it queries.
     """
     if schema.get_mutation_type() is not None:
-        raise SchemaStructureError(u'Schema contains mutations.')
+        raise SchemaStructureError(
+            u'Renaming schemas that contain mutations is currently not supported.'
+        )
     if schema.get_subscription_type() is not None:
-        raise SchemaStructureError(u'Schema contains subscriptions.')
+        raise SchemaStructureError(
+            u'Renaming schemas that contain subscriptions is currently not supported.'
+        )
 
     query_type = get_query_type_name(schema)
 
