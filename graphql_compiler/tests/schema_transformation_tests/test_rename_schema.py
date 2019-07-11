@@ -10,7 +10,7 @@ from graphql_compiler.schema_transformation.rename_schema import (
     RenameSchemaTypesVisitor, rename_schema
 )
 from graphql_compiler.schema_transformation.utils import (
-    SchemaNameConflictError, SchemaStructureError
+    SchemaNameConflictError, SchemaStructureError, InvalidNameError
 )
 
 from .input_schema_strings import InputSchemaStrings as ISS
@@ -21,6 +21,7 @@ class TestRenameSchema(unittest.TestCase):
         """Check that all types are covered without overlap."""
         all_types = set(ast_type.__name__ for ast_type in QUERY_DOCUMENT_KEYS)
         type_sets = [RenameSchemaTypesVisitor.noop_types,
+                     RenameSchemaTypesVisitor.check_name_validity_types,
                      RenameSchemaTypesVisitor.rename_types,
                      RenameSchemaTypesVisitor.unexpected_types,
                      RenameSchemaTypesVisitor.disallowed_types]
@@ -285,9 +286,6 @@ class TestRenameSchema(unittest.TestCase):
 
     def test_all_clashing_rename(self):
         class ConstantDict(object):
-            def __contains__(self, key):
-                return True
-
             def get(self, key, default=None):
                 return 'OneType'
 
@@ -401,6 +399,10 @@ class TestRenameSchema(unittest.TestCase):
         with self.assertRaises(SchemaNameConflictError):
             rename_schema(parse(schema_string), {'Human': 'String'})
 
+    def test_invalid_schema(self):
+        with self.assertRaises(SchemaStructureError):
+            rename_schema(parse(ISS.invalid_schema), {})
+
     def test_schema_extension(self):
         schema_string = dedent('''\
             schema {
@@ -498,11 +500,98 @@ class TestRenameSchema(unittest.TestCase):
         with self.assertRaises(SchemaStructureError):
             rename_schema(parse(schema_string), {})
 
+    def test_illegal_double_underscore_name(self):
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.double_underscore_schema), {})
+
+    def test_illegal_rename_start_with_number(self):
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.basic_schema), {'Human': '0Human'})
+
+    def test_illegal_rename_contains_illegal_char(self):
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.basic_schema), {'Human': 'Human!'})
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.basic_schema), {'Human': 'H-uman'})
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.basic_schema), {'Human': 'H.uman'})
+
+    def test_illegal_rename_to_double_underscore(self):
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.basic_schema), {'Human': '__Human'})
+
+    def test_illegal_rename_to_reserved_name_type(self):
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(ISS.basic_schema), {'Human': '__Type'})
+
+    def test_illegal_reserved_name_type(self):
+        schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              Human: Human
+            }
+
+            type Human {
+              id: String
+            }
+
+            type __Type {
+              id: String
+            }
+        ''')
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(schema_string), {})
+
+    def test_illegal_reserved_name_enum(self):
+        schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              Human: Human
+            }
+
+            type Human {
+              id: String
+            }
+
+            enum __Type {
+              ENUM1
+              ENUM2
+            }
+        ''')
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(schema_string), {})
+
+    def test_illegal_reserved_name_scalar(self):
+        # NOTE: such scalars will not appear in typemap!
+        # See graphql/type/introspection for all reserved types
+        # This edge case (scalar with reserved type name defined but not used) is the reason that
+        # check_name_validity_types was added to RenameSchemaTypesVisitor
+        schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              Human: Human
+            }
+
+            type Human {
+              id: String
+            }
+
+            scalar __Type
+        ''')
+        with self.assertRaises(InvalidNameError):
+            rename_schema(parse(schema_string), {})
+
     def test_various_types_rename(self):
         class AddNewDict(object):
-            def __contains__(self, key):
-                return True
-
             def get(self, key, default=None):
                 return 'New' + key
 

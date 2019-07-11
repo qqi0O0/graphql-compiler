@@ -1,4 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
+import re
+
 from graphql.language.ast import NamedType
 from graphql.language.visitor import Visitor, visit
 from graphql.type.definition import GraphQLScalarType
@@ -17,8 +19,37 @@ class SchemaStructureError(SchemaTransformError):
     """
 
 
+class InvalidNameError(SchemaTransformError):
+    """Raised if a type/field name is not valid.
+
+    This may be raised if the input schema contains invalid names, or if the user attempts to
+    rename a type/field to an invalid name. A name is considered valid if it consists of
+    alphanumeric characters and underscores and doesn't start with a numeric character (as
+    required by GraphQL), and doesn't start with double underscores as such types are reserved
+    for GraphQL internal use.
+    """
+
+
 class SchemaNameConflictError(SchemaTransformError):
     """Raised when renaming types or fields cause name conflicts."""
+
+
+def check_name_is_valid(name):
+    """Check if input is a valid, nonreserved GraphQL type name.
+
+    Args:
+        name: str
+
+    Raises:
+        InvalidNameError if the name doesn't consist of only alphanumeric characters and
+        underscores, starts with a numeric character, or starts with double underscores
+    """
+    pattern = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
+    if not pattern.match(name):
+        raise InvalidNameError(u'"{}" is not a valid GraphQL name.'.format(name))
+    if name.startswith('__'):
+        raise InvalidNameError(u'"{}" starts with two underscores, which is reserved for '
+                               'GraphQL internal use and is not allowed.'.format(name))
 
 
 def get_query_type_name(schema):
@@ -38,6 +69,10 @@ def get_scalar_names(schema):
 
     Includes all user defined scalars, as well as any builtin scalars used in the schema; excludes
     builtin scalars not used in the schema.
+
+    Note: If the user defined a scalar that shares its name with a builtin introspection type
+    (such as __Schema, __Directive, etc), it will not be listed in type_map and thus will not
+    be included in the output.
 
     Returns:
         Set[str], set of names of scalars used in the schema

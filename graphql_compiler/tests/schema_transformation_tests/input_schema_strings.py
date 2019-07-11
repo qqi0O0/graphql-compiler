@@ -265,3 +265,17 @@ class InputSchemaStrings(object):
           Human: Human
         }
     ''')
+
+    double_underscore_schema = dedent('''\
+        schema {
+          query: SchemaQuery
+        }
+
+        type SchemaQuery {
+          __Human: __Human
+        }
+
+        type __Human {
+          id: String
+        }
+    ''')
