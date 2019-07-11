@@ -45,13 +45,13 @@ class InputSchemaStrings(object):
           id: String
         }
 
-        type Human implements Character {
+        type Kid implements Character {
           id: String
         }
 
         type SchemaQuery {
           Character: Character
-          Human: Human
+          Kid: Kid
         }
     ''')
 
@@ -151,13 +151,13 @@ class InputSchemaStrings(object):
           query: SchemaQuery
         }
 
-        type Human {
+        type Dog {
           id: String!
-          friend: Human!
+          friend: Dog!
         }
 
         type SchemaQuery {
-          Human: Human!
+          Dog: Dog!
         }
     ''')
 

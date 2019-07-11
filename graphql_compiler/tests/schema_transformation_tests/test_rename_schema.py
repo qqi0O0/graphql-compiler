@@ -87,7 +87,7 @@ class TestRenameSchema(unittest.TestCase):
 
     def test_interface_rename(self):
         renamed_schema = rename_schema(parse(ISS.interface_schema),
-                                       {'Human': 'NewHuman', 'Character': 'NewCharacter'})
+                                       {'Kid': 'NewKid', 'Character': 'NewCharacter'})
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
@@ -97,17 +97,17 @@ class TestRenameSchema(unittest.TestCase):
               id: String
             }
 
-            type NewHuman implements NewCharacter {
+            type NewKid implements NewCharacter {
               id: String
             }
 
             type SchemaQuery {
               NewCharacter: NewCharacter
-              NewHuman: NewHuman
+              NewKid: NewKid
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewHuman': 'Human', 'NewCharacter': 'Character'},
+        self.assertEqual({'NewKid': 'Kid', 'NewCharacter': 'Character'},
                          renamed_schema.reverse_name_map)
 
     def test_interfaces_rename(self):
@@ -237,23 +237,23 @@ class TestRenameSchema(unittest.TestCase):
         )
 
     def test_non_null_rename(self):
-        renamed_schema = rename_schema(parse(ISS.non_null_schema), {'Human': 'NewHuman'})
+        renamed_schema = rename_schema(parse(ISS.non_null_schema), {'Dog': 'NewDog'})
         renamed_schema_string = dedent('''\
             schema {
               query: SchemaQuery
             }
 
-            type NewHuman {
+            type NewDog {
               id: String!
-              friend: NewHuman!
+              friend: NewDog!
             }
 
             type SchemaQuery {
-              NewHuman: NewHuman!
+              NewDog: NewDog!
             }
         ''')
         self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
-        self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_name_map)
+        self.assertEqual({'NewDog': 'Dog'}, renamed_schema.reverse_name_map)
 
     def test_directive_rename(self):
         renamed_schema = rename_schema(

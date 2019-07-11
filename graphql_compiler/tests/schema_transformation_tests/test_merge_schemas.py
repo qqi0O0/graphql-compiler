@@ -7,9 +7,8 @@ from graphql import parse
 from graphql.language.printer import print_ast
 
 from graphql_compiler.schema_transformation.merge_schemas import merge_schemas
-from graphql_compiler.schema_transformation.rename_schema import rename_schema
 from graphql_compiler.schema_transformation.utils import (
-    SchemaNameConflictError, SchemaStructureError
+    InvalidTypeNameError, SchemaNameConflictError, SchemaStructureError
 )
 
 from .input_schema_strings import InputSchemaStrings as ISS
@@ -27,7 +26,7 @@ class PrefixDict(object):
 
 
 class TestMergeSchemas(unittest.TestCase):
-    def test_no_rename_basic_merge(self):
+    def test_basic_merge(self):
         merged_schema = merge_schemas(
             OrderedDict({
                 'basic': parse(ISS.basic_schema),
@@ -61,42 +60,13 @@ class TestMergeSchemas(unittest.TestCase):
         self.assertEqual({'Droid': 'enum', 'Height': 'enum', 'Human': 'basic'},
                          merged_schema.name_id_map)
 
-    def test_rename_basic_merge(self):
-        merged_schema = merge_schemas(
-            OrderedDict({
-                'first': rename_schema(parse(ISS.basic_schema), PrefixDict('First')).schema_ast,
-                'second': rename_schema(parse(ISS.basic_schema), PrefixDict('Second')).schema_ast
-            })
-        )
-        merged_schema_string = dedent('''\
-            schema {
-              query: RootSchemaQuery
-            }
-
-            type RootSchemaQuery {
-              FirstHuman: FirstHuman
-              SecondHuman: SecondHuman
-            }
-
-            type FirstHuman {
-              id: String
-            }
-
-            type SecondHuman {
-              id: String
-            }
-        ''')
-        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
-        self.assertEqual({'FirstHuman': 'first', 'SecondHuman': 'second'},
-                         merged_schema.name_id_map)
-
     def test_multiple_merge(self):
         merged_schema = merge_schemas(
             OrderedDict({
                 'first': parse(ISS.basic_schema),
                 'second': parse(ISS.enum_schema),
-                'third': rename_schema(parse(ISS.interface_schema), {'Human': 'Human2'}).schema_ast,
-                'fourth': rename_schema(parse(ISS.scalar_schema), {'Human': 'Human3'}).schema_ast
+                'third': parse(ISS.interface_schema),
+                'fourth': parse(ISS.non_null_schema)
             })
         )
         merged_schema_string = dedent('''\
@@ -108,8 +78,8 @@ class TestMergeSchemas(unittest.TestCase):
               Human: Human
               Droid: Droid
               Character: Character
-              Human2: Human2
-              Human3: Human3
+              Kid: Kid
+              Dog: Dog!
             }
 
             type Human {
@@ -129,15 +99,14 @@ class TestMergeSchemas(unittest.TestCase):
               id: String
             }
 
-            type Human2 implements Character {
+            type Kid implements Character {
               id: String
             }
 
-            type Human3 {
-              birthday: Date
+            type Dog {
+              id: String!
+              friend: Dog!
             }
-
-            scalar Date
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
@@ -346,8 +315,8 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         merged_schema = merge_schemas(
             OrderedDict({
-                'first': rename_schema(parse(ISS.scalar_schema), PrefixDict('First')).schema_ast,
-                'second': rename_schema(parse(extra_scalar_schema), PrefixDict('Second')).schema_ast
+                'first': parse(ISS.scalar_schema),
+                'second': parse(extra_scalar_schema)
             })
         )
         merged_schema_string = dedent('''\
@@ -356,11 +325,11 @@ class TestMergeSchemas(unittest.TestCase):
             }
 
             type RootSchemaQuery {
-              FirstHuman: FirstHuman
-              SecondKid: SecondKid
+              Human: Human
+              Kid: Kid
             }
 
-            type FirstHuman {
+            type Human {
               birthday: Date
             }
 
@@ -368,12 +337,12 @@ class TestMergeSchemas(unittest.TestCase):
 
             scalar Decimal
 
-            type SecondKid {
+            type Kid {
               height: Decimal
             }
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
-        self.assertEqual({'FirstHuman': 'first', 'SecondKid': 'second'},
+        self.assertEqual({'Human': 'first', 'Kid': 'second'},
                          merged_schema.name_id_map)
 
     def test_dedup_same_directives(self):
@@ -455,3 +424,7 @@ class TestMergeSchemas(unittest.TestCase):
                     'second': parse(extra_directive_schema)
                 })
             )
+
+    def test_illegal_double_underscore_name_single_merge(self):
+        with self.assertRaises(InvalidTypeNameError):
+            merge_schemas(OrderedDict({'invalid': parse(ISS.double_underscore_schema)}))
