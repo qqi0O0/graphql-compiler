@@ -10,7 +10,7 @@ from graphql_compiler.schema_transformation.rename_schema import (
     RenameSchemaTypesVisitor, rename_schema
 )
 from graphql_compiler.schema_transformation.utils import (
-    InvalidNameError, SchemaNameConflictError, SchemaStructureError
+    InvalidTypeNameError, SchemaNameConflictError, SchemaStructureError
 )
 
 from .input_schema_strings import InputSchemaStrings as ISS
@@ -503,27 +503,27 @@ class TestRenameSchema(unittest.TestCase):
             rename_schema(parse(schema_string), {})
 
     def test_illegal_double_underscore_name(self):
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.double_underscore_schema), {})
 
     def test_illegal_rename_start_with_number(self):
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.basic_schema), {'Human': '0Human'})
 
     def test_illegal_rename_contains_illegal_char(self):
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.basic_schema), {'Human': 'Human!'})
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.basic_schema), {'Human': 'H-uman'})
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.basic_schema), {'Human': 'H.uman'})
 
     def test_illegal_rename_to_double_underscore(self):
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.basic_schema), {'Human': '__Human'})
 
     def test_illegal_rename_to_reserved_name_type(self):
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(ISS.basic_schema), {'Human': '__Type'})
 
     def test_illegal_reserved_name_type(self):
@@ -544,7 +544,7 @@ class TestRenameSchema(unittest.TestCase):
               id: String
             }
         ''')
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(schema_string), {})
 
     def test_illegal_reserved_name_enum(self):
@@ -566,7 +566,7 @@ class TestRenameSchema(unittest.TestCase):
               ENUM2
             }
         ''')
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(schema_string), {})
 
     def test_illegal_reserved_name_scalar(self):
@@ -589,7 +589,7 @@ class TestRenameSchema(unittest.TestCase):
 
             scalar __Type
         ''')
-        with self.assertRaises(InvalidNameError):
+        with self.assertRaises(InvalidTypeNameError):
             rename_schema(parse(schema_string), {})
 
     def test_various_types_rename(self):
