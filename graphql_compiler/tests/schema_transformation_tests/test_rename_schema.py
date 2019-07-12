@@ -286,6 +286,37 @@ class TestRenameSchema(unittest.TestCase):
         self.assertEqual({'NewHuman': 'Human', 'NewDroid': 'Droid'},
                          renamed_schema.reverse_name_map)
 
+    def test_query_type_field_argument(self):
+        schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              Human(id: String!): Human
+            }
+
+            type Human {
+              name: String
+            }
+        ''')
+        renamed_schema = rename_schema(parse(schema_string), {'Human': 'NewHuman'})
+        renamed_schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              NewHuman(id: String!): NewHuman
+            }
+
+            type NewHuman {
+              name: String
+            }
+        ''')
+        self.assertEqual(renamed_schema_string, print_ast(renamed_schema.schema_ast))
+        self.assertEqual({'NewHuman': 'Human'}, renamed_schema.reverse_name_map)
+
     def test_clashing_type_rename(self):
         schema_string = dedent('''\
             schema {

@@ -1,7 +1,9 @@
 # Copyright 2019-present Kensho Technologies, LLC.
+from copy import deepcopy
+
 from graphql import parse
 from graphql.language.visitor import Visitor, visit
-from graphql.langiage.printer import print_ast
+from graphql.language.printer import print_ast
 
 
 # Call this rename_query instead? Its effects are similar to rename_schema, it doesn't need to
@@ -16,7 +18,7 @@ from graphql.langiage.printer import print_ast
 
 
 
-def rename_query(query_string, renamings):
+def rename_query(ast, renamings):
     """Translate all types and entry point fields (fields of query type) using renamings.
 
     Most fields (fields of types other than the query type) will not be renamed. Any type
@@ -28,26 +30,28 @@ def rename_query(query_string, renamings):
     renamed schema, to receive the same query written in the original schema's types and fields.
 
     Args:
-        query_string: str
-        renamings: Dict[str, str], 
-        renamed_schema: RenamedSchema, namedtuple containing the ast of the renamed schema, and
-                        a map of renamed names to original names
+        ast: Document, representing a valid query; not modified by this function
+        renamings: Dict[str, str], mapping original types/query type field names as appearing
+                   in the query to renamed names. Type or query type field names not appearing
+                   in the dict will be unchanged
 
     Returns:
-        query string where type names are demangled
+        Document, a new AST representing the renamed query
     """
-    ast = parse(query_string)
-    reverse_name_map = renamed_schema.reverse_name_map
+    ast = deepcopy(ast)
 
-    visitor = DemangleQueryVisitor(reverse_name_map)
+    visitor = RenameQueryVisitor(renamings)
     visit(ast, visitor)
 
     return print_ast(ast)
 
 
-class DemangleQueryVisitor(Visitor):
-    def __init__(self, name_map):
-        """
+class RenameQueryVisitor(Visitor):
+    def __init__(self, renamings):
+        """Create a visitor for renaming types and entry point fields in a query AST.
+
+        Args:
+            renamings: Dict[str, str], mapping from o
         """
         pass
     # some fields are not translated, such as alias or various non-root field names
@@ -62,8 +66,8 @@ class DemangleQueryVisitor(Visitor):
     # or builtins?
     
 
-    # for demangling root fields, need to 1. check that we're under an OperationDefinition with
+    # for renaming root fields, need to 1. check that we're under an OperationDefinition with
     # operation equal to query, and 2. we're in the first level of SelectionSet
 
-    # for demangling types, just demangle all NamedTypes that appear in the dict.
+    # for renaming types, just renamed all NamedTypes that appear in the dict.
     # scalar types cannot appear as NamedType in a query I believe?

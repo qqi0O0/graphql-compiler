@@ -33,3 +33,22 @@ class InputQueryStrings(object):
           }
         }
     ''')
+
+    alias_query = dedent('''\
+        query FetchLukeAliased {
+          luke: Human(id: "1000") {
+            name
+          }
+        }
+    ''')
+
+    multiple_alias_query = dedent('''\
+        query FetchLukeAndLeiaAliased {
+          luke: Human(id: "1000") {
+            name
+          }
+          leia: Human(id: "1003") {
+            name
+          }
+        }
+    ''')
