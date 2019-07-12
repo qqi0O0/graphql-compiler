@@ -58,6 +58,9 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
 
 
+    # TODO: input arguments to entry point field
+
+
     # SelectionSet and Field very common
 
     # TODO: 
