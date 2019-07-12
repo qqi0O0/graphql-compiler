@@ -6,18 +6,6 @@ from graphql.language.visitor import Visitor, visit
 from graphql.language.printer import print_ast
 
 
-# Call this rename_query instead? Its effects are similar to rename_schema, it doesn't need to
-# take in a 'reverse_name_map' but just any 'remaings'. It's just that one use case is for
-# transforming queries with renamed types back into originals.
-# It should just take in a name_map, not a renamed_schema
-
-# One issue: rename_schema and merge_schema take in AST(s) and output some kind of descriptor
-# that contains a dictionary and an AST. This takes in a string and outputs a string, even though
-# it's named the same way as rename_schema
-
-
-
-
 def rename_query(ast, renamings):
     """Translate all types and entry point fields (fields of query type) using renamings.
 
@@ -39,6 +27,11 @@ def rename_query(ast, renamings):
         Document, a new AST representing the renamed query
     """
     ast = deepcopy(ast)
+
+    # NOTE: unlike with schemas, there's no such thing as build_ast_query or anything like that
+    # to check that the structure of the query fits expectations.
+    # Any need to check that? Or leave it be the responsibility of the user to ensure that
+    # they're putting in a valid query AST?
 
     visitor = RenameQueryVisitor(renamings)
     visit(ast, visitor)
