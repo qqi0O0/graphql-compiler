@@ -67,13 +67,13 @@ def _emit_code_from_cypher_step(cypher_step):
             'in': ('left_edge_mark', u'<'),
             'out': ('right_edge_mark', u'>'),
         }
-        key, value = direction_lookup[direction]
-        template_data[key] = value
+        direction_symbol_name, direction_symbol = direction_lookup[direction]
+        template_data[direction_symbol_name] = direction_symbol
 
     if isinstance(cypher_step.step_block, Recurse):
         template_data['quantifier'] = u'*0..%d' % cypher_step.step_block.depth
 
-    # Try to obey the Cypher style guidebook at least a little bit.
+    # Comply with Cypher style guidebook on whitespace a bit.
     pattern += u'\n'
 
     return pattern % template_data
@@ -109,7 +109,7 @@ def _emit_with_clause_components(cypher_steps):
 
 def emit_code_from_ir(cypher_query, compiler_metadata):
     """Return a Cypher query string from a CypherQuery object."""
-    query_data = [u'CYPHER 9\n']
+    query_data = [u'CYPHER 3.5\n']
 
     for cypher_step in cypher_query.steps:
         query_data.append(_emit_code_from_cypher_step(cypher_step))
