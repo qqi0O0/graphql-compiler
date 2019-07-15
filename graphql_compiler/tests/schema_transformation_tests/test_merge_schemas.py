@@ -154,7 +154,7 @@ class TestMergeSchemas(unittest.TestCase):
         with self.assertRaises(SchemaStructureError):
             merge_schemas(
                 OrderedDict({
-                    'invalid': parse(ISS.invalid_schema)
+                    'invalid': parse(ISS.missing_type_schema)
                 })
             )
 
@@ -330,6 +330,7 @@ class TestMergeSchemas(unittest.TestCase):
             }
 
             type Human {
+              id: String
               birthday: Date
             }
 
