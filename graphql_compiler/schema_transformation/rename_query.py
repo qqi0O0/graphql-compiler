@@ -36,7 +36,7 @@ def rename_query(ast, renamings):
     visitor = RenameQueryVisitor(renamings)
     visit(ast, visitor)
 
-    return print_ast(ast)
+    return ast
 
 
 class RenameQueryVisitor(Visitor):
@@ -44,9 +44,10 @@ class RenameQueryVisitor(Visitor):
         """Create a visitor for renaming types and entry point fields in a query AST.
 
         Args:
-            renamings: Dict[str, str], mapping from o
+            renamings: Dict[str, str], mapping from original type name to renamed type name.
+                       Any name not in the dict will be unchanged
         """
-        pass
+        self.renamings = renamings
     # some fields are not translated, such as alias or various non-root field names
     # how to tell?
 

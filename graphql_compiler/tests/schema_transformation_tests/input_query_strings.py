@@ -42,7 +42,7 @@ class InputQueryStrings(object):
         }
     ''')
 
-    multiple_alias_query = dedent('''\
+    multiple_aliases_query = dedent('''\
         query FetchLukeAndLeiaAliased {
           luke: Human(id: "1000") {
             name
