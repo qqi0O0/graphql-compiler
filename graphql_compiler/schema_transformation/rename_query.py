@@ -28,10 +28,10 @@ def rename_query(ast, renamings):
     """
     ast = deepcopy(ast)
 
-    # NOTE: unlike with schemas, there's no such thing as build_ast_query or anything like that
-    # to check that the structure of the query fits expectations.
-    # Any need to check that? Or leave it be the responsibility of the user to ensure that
-    # they're putting in a valid query AST?
+    # NOTE: There is a whole section 'validation' in graphql-core that takes in a schema and a
+    # query ast, and checks whether the query is valid. Therefore, this code will not check for
+    # validity of input, but assumes that the input is a valid query ast. If it is not, the
+    # output may be strange, but no errors will be raised.
 
     visitor = RenameQueryVisitor(renamings)
     visit(ast, visitor)
@@ -48,20 +48,52 @@ class RenameQueryVisitor(Visitor):
                        Any name not in the dict will be unchanged
         """
         self.renamings = renamings
-    # some fields are not translated, such as alias or various non-root field names
-    # how to tell?
+        self.in_query = False
+        self.selection_set_level = 0
 
-    # Want to rename two things: the first level selection set field names (root fields)
-    # and NamedTypes (e.g. in fragments)
-    # Should do those in two steps
-    # TODO
-    # First step doesn't need visitor. Just iterate over selection set like with dedup
-    # Second step uses very simple visitor that transforms all NamedTypes that are not scalars
-    # or builtins?
-    
+    def _rename_name(self, node):
+        """Rename the value of the node as according to renamings.
 
-    # for renaming root fields, need to 1. check that we're under an OperationDefinition with
-    # operation equal to query, and 2. we're in the first level of SelectionSet
+        Modifies node.
 
-    # for renaming types, just renamed all NamedTypes that appear in the dict.
-    # scalar types cannot appear as NamedType in a query I believe?
+        Args:
+            node: type Name, an AST Node object that describes the name of its parent node in
+                  the AST
+        """
+        name_string = node.value
+        new_name_string = self.renamings.get(name_string, name_string)  # Default use original
+        node.value = new_name_string
+
+    def enter_NamedType(self, node, *args):
+        """Rename name of node."""
+        # NamedType nodes describe types in the schema and should always be renamed
+        # They may appear in, for example, FragmentDefinition
+        self._rename_name(node.name)
+
+    def enter_OperationDefinition(self, node, *args):
+        """If node's operation is query, record that we entered a query definition."""
+        if node.operation == 'query':
+            self.in_query = True
+
+    def leave_OperationDefinition(self, node, *args):
+        """If node's operation is query, record that we left a query definition."""
+        if node.operation == 'query':
+            self.in_query = False
+
+    def enter_SelectionSet(self, node, *args):
+        """Record that we entered another nested level of selections."""
+        self.selection_set_level += 1
+
+    def leave_SelectionSet(self, node, *args):
+        """Record that we left a level of selections."""
+        self.selection_set_level -= 1
+
+    def enter_Field(self, node, *args):
+        """Rename entry point fields, aka fields of the query type."""
+        # For a Field to be a field of the query type, it needs to be:
+        # - Under the query operation definition (if a Field is not under the query operation
+        # definition, it may be a part of a Fragment definition)
+        # - The first level of selections (fields in more nested selections are normal fields,
+        # and should not be modified)
+        if self.in_query and self.selection_set_level == 1:
+            self._rename_name(node.name)

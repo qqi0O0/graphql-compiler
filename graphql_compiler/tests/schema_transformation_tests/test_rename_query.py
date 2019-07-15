@@ -15,8 +15,6 @@ class TestDemangleQuery(unittest.TestCase):
     def test_no_rename(self):
         renamed_query = rename_query(parse(IQS.basic_named_query), {})
         self.assertEqual(IQS.basic_named_query, print_ast(renamed_query))
-        print()
-        print(parse(IQS.basic_named_query))
 
     def test_rename_named_query(self):
         renamed_query = rename_query(parse(IQS.basic_named_query),
@@ -45,8 +43,6 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-        print()
-        print(parse(IQS.basic_unnamed_query))
 
     def test_rename_nested_query(self):
         renamed_query = rename_query(parse(IQS.nested_query),
@@ -66,9 +62,6 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-        print()
-        print(parse(IQS.nested_query))
-        pass
 
     def test_field_with_argument(self):
         query_string = dedent('''\
@@ -87,8 +80,6 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-        print()
-        print(parse(query_string))
 
     def test_field_with_parameterized_argument(self):
         query_string = dedent('''\
@@ -107,8 +98,6 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-        print()
-        print(parse(query_string))
 
     def test_single_alias_query(self):
         renamed_query = rename_query(parse(IQS.alias_query), {'Human': 'NewHuman', 'luke': 'Luke'})
@@ -120,13 +109,11 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-        print()
-        print(parse(IQS.alias_query))
 
     def test_multiple_aliases_queries(self):
         renamed_query = rename_query(parse(IQS.multiple_aliases_query), {'Human': 'NewHuman'})
         renamed_query_string = dedent('''\
-            query FetchLukeAliased {
+            query FetchLukeAndLeiaAliased {
               luke: NewHuman(id: "1000") {
                 name
               }
@@ -136,16 +123,52 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-        print()
-        print(parse(IQS.multiple_aliases_query))
 
+    def test_fragment(self):
+        renamed_query = rename_query(
+            parse(IQS.fragment_query),
+            {
+                'Human': 'NewHuman',
+                'HumanFragment': 'NewHumanFragment',
+                'name': 'Name',
+            }
+        )
+        renamed_query_string = dedent('''\
+            query UseFragment {
+              luke: NewHuman(id: "1000") {
+                ...HumanFragment
+              }
+              leia: NewHuman(id: "1003") {
+                ...HumanFragment
+              }
+            }
+
+            fragment HumanFragment on NewHuman {
+              name
+              homePlanet
+            }
+        ''')
+        self.assertEqual(renamed_query_string, print_ast(renamed_query))
+
+    def test_inline_fragment(self):
+        renamed_query = rename_query(parse(IQS.inline_fragment_query),
+                                     {'Human': 'NewHuman', 'Character': 'NewCharacter'})
+        renamed_query_string = dedent('''\
+            query FieldInInlineFragment {
+              NewCharacter {
+                name
+                ... on NewHuman {
+                  age
+                }
+              }
+            }
+        ''')
+        self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     # SelectionSet and Field very common
 
     # TODO: 
-    # InlineFragment, FragmentDefinition, FragmentSpread
     # ObjectField, ObjectValue (unclear)
     # Variable, VariableDefinition (unclear)
     # TODO:
     # Introspection queries -- builtin types and root fields
-    # aliases
