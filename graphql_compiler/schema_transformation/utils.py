@@ -45,8 +45,8 @@ def check_type_name_is_valid(name):
         name: str
 
     Raises:
-        InvalidTypeNameError if the name doesn't consist of only alphanumeric characters and
-        underscores, starts with a numeric character, or starts with double underscores
+        - InvalidTypeNameError if the name doesn't consist of only alphanumeric characters and
+          underscores, starts with a numeric character, or starts with double underscores
     """
     if not isinstance(name, str):
         raise InvalidTypeNameError(u'Name "{}" is not a string.'.format(name))
@@ -119,8 +119,8 @@ class CheckQueryTypeFieldsNameMatchVisitor(Visitor):
         """If inside the query type, check that the field and queried type names match.
 
         Raises:
-            SchemaStructureError if the field name is not identical to the name of the type
-            that it queries
+            - SchemaStructureError if the field name is not identical to the name of the type
+              that it queries
         """
         if self.in_query_type:
             field_name = node.name.value
@@ -144,8 +144,8 @@ def _check_query_type_fields_name_match(ast, query_type):
         query_type: str, name of the query type
 
     Raises:
-        SchemaStructureError if any query type field name is not identical to the name of the
-        type that it queries
+        - SchemaStructureError if any query type field name is not identical to the name of the
+          type that it queries
     """
     visitor = CheckQueryTypeFieldsNameMatchVisitor(query_type)
     visit(ast, visitor)
@@ -162,8 +162,8 @@ def check_ast_schema_is_valid(ast, schema):
         schema: GraphQLSchema, representing the same schema as ast
 
     Raises:
-        SchemaStructureError if the schema contains mutations, contains subscriptions, or some
-        query type field name does not match the type it queries.
+        - SchemaStructureError if the schema contains mutations, contains subscriptions, or some
+          query type field name does not match the type it queries.
     """
     if schema.get_mutation_type() is not None:
         raise SchemaStructureError(

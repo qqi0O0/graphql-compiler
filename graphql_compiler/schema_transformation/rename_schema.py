@@ -44,13 +44,13 @@ def rename_schema(ast, renamings):
 
     Raises:
         - InvalidTypeNameError if the schema contains an invalid type name, or if the user attempts
-        to rename a type to an invalid name. A name is considered invalid if it does not consist
-        of alphanumeric characters and underscores, if it starts with a numeric character, or
-        if it starts with double underscores
+          to rename a type to an invalid name. A name is considered invalid if it does not consist
+          of alphanumeric characters and underscores, if it starts with a numeric character, or
+          if it starts with double underscores
         - SchemaStructureError if the schema does not have the expected form; in particular, if
-        the AST does not represent a valid schema, if any query type field does not have the
-        same name as the type that it queries, if the schema contains type extensions or
-        input object definitions, or if the schema contains mutations or subscriptions
+          the AST does not represent a valid schema, if any query type field does not have the
+          same name as the type that it queries, if the schema contains type extensions or
+          input object definitions, or if the schema contains mutations or subscriptions
         - SchemaNameConflictError if there are conflicts between the renamed types or fields
     """
     ast = deepcopy(ast)
@@ -105,7 +105,7 @@ def _rename_types(ast, renamings, query_type, scalars):
 
     Raises:
         - InvalidTypeNameError if the schema contains an invalid type name, or if the user attempts
-        to rename a type to an invalid name
+          to rename a type to an invalid name
         - SchemaNameConflictError if the rename causes name conflicts
     """
     visitor = RenameSchemaTypesVisitor(renamings, query_type, scalars)
@@ -210,7 +210,7 @@ class RenameSchemaTypesVisitor(Visitor):
         Raises:
             - InvalidTypeNameError if either the node's current name or renamed name is invalid
             - SchemaNameConflictError if the newly renamed node causes name conflicts with
-            existing types, scalars, or builtin types
+              existing types, scalars, or builtin types
         """
         name_string = node.value
         check_type_name_is_valid(name_string)
