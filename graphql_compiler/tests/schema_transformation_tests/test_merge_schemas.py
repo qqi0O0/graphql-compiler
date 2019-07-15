@@ -14,17 +14,6 @@ from graphql_compiler.schema_transformation.utils import (
 from .input_schema_strings import InputSchemaStrings as ISS
 
 
-class PrefixDict(object):
-    def __init__(self, prefix):
-        self.prefix = prefix
-
-    def get(self, key, default=None):
-        return self.prefix + key
-
-    def __contains__(self, key):
-        return True
-
-
 class TestMergeSchemas(unittest.TestCase):
     def test_basic_merge(self):
         merged_schema = merge_schemas(
