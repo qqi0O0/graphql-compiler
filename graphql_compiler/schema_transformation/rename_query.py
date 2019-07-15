@@ -26,12 +26,17 @@ def rename_query(ast, renamings):
     Returns:
         Document, a new AST representing the renamed query
     """
-    ast = deepcopy(ast)
+    # Question: Allow document to represent not 1, but any number of queries? There is no
+    # change to the code.
+    # Question: Disallow fragments, and raise error if we see one?
+    # Question: How much do we check the validity of the input ast?
 
     # NOTE: There is a whole section 'validation' in graphql-core that takes in a schema and a
-    # query ast, and checks whether the query is valid. Therefore, this code will not check for
-    # validity of input, but assumes that the input is a valid query ast. If it is not, the
-    # output may be strange, but no errors will be raised.
+    # query ast, and checks whether the query is valid. This code currently does not check for
+    # validity of the input or remaing at all, but assumes that the input is a valid query ast
+    # and the renamings dict is so that the output is a valid query. If it is not, the
+    # output may be strange or unexpected, but no errors will be raised.
+    ast = deepcopy(ast)
 
     visitor = RenameQueryVisitor(renamings)
     visit(ast, visitor)
@@ -67,7 +72,7 @@ class RenameQueryVisitor(Visitor):
     def enter_NamedType(self, node, *args):
         """Rename name of node."""
         # NamedType nodes describe types in the schema and should always be renamed
-        # They may appear in, for example, FragmentDefinition
+        # They may appear in, for example, InlineFragment
         self._rename_name(node.name)
 
     def enter_OperationDefinition(self, node, *args):
@@ -95,5 +100,7 @@ class RenameQueryVisitor(Visitor):
         # definition, it may be a part of a Fragment definition)
         # - The first level of selections (fields in more nested selections are normal fields,
         # and should not be modified)
+        # As a query may not start with type coercion (aka inline fragment), an element in the
+        # first level of selection set must be a field of the query type
         if self.in_query and self.selection_set_level == 1:
             self._rename_name(node.name)

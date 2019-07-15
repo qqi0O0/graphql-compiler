@@ -331,38 +331,5 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
-    def test_inline_fragment_at_root(self):
-        query_string = dedent('''\
-            query FragmentAtRoot {
-              ... on RootSchemaQuery {
-                Human {
-                  name
-                }
-              }
-            }
-        ''')
-        print(parse(query_string))
-        renamed_query = rename_query(
-            parse(query_string),
-            {
-                'Human': 'NewHuman',
-            }
-        )
-        renamed_query_string = dedent('''\
-            query FragmentAtRoot {
-              ... on RootSchemaQuery {
-                NewHuman {
-                  name
-                }
-              }
-            }
-        ''')
-        self.assertEqual(renamed_query_string, print_ast(renamed_query))
-
-    # TODO:
-    # Selection can be for FragmentSpread or InlineFragment, possible for the very first level
-    # of selections to be one of these, pushing down the actual root field?
     # TODO: 
     # ObjectField, ObjectValue (unclear)
-    # TODO:
-    # Introspection queries -- builtin types and root fields
