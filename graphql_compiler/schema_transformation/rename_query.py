@@ -1,8 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from copy import deepcopy
 
-from graphql import parse
-from graphql.language.printer import print_ast
 from graphql.language.visitor import Visitor, visit
 
 

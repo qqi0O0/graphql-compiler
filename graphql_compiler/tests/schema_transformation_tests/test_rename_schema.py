@@ -7,9 +7,7 @@ from graphql.language.printer import print_ast
 from graphql.language.visitor_meta import QUERY_DOCUMENT_KEYS
 
 from ...schema_transformation.rename_schema import RenameSchemaTypesVisitor, rename_schema
-from ...schema_transformation.utils import (
-    InvalidTypeNameError, SchemaNameConflictError, SchemaStructureError
-)
+from ...schema_transformation.utils import InvalidTypeNameError, SchemaNameConflictError
 from .input_schema_strings import InputSchemaStrings as ISS
 
 

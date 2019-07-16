@@ -111,7 +111,7 @@ class CheckValidTypesVisitor(Visitor):
         'VariableDefinition',
     })
 
-    def enter(self, node, *args):
+    def enter(self, node, key, parent, path, ancestors):
         """Raise error if node is of a bad type.
 
         Raises:
@@ -142,7 +142,7 @@ class CheckTypeNamesValidVisitor(Visitor):
         'UnionTypeDefinition',
     })
 
-    def enter(self, node, *args):
+    def enter(self, node, key, parent, path, ancestors):
         """Upon entering the definition of a type or scalar, check that its name is valid."""
         node_type = type(node).__name__
         if node_type in self.check_name_validity_types:

@@ -7,9 +7,7 @@ from graphql import parse
 from graphql.language.printer import print_ast
 
 from graphql_compiler.schema_transformation.merge_schemas import merge_schemas
-from graphql_compiler.schema_transformation.utils import (
-    InvalidTypeNameError, SchemaNameConflictError, SchemaStructureError
-)
+from graphql_compiler.schema_transformation.utils import SchemaNameConflictError
 
 from .input_schema_strings import InputSchemaStrings as ISS
 
@@ -138,14 +136,6 @@ class TestMergeSchemas(unittest.TestCase):
             }
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
-
-    def test_invalid_input_schema(self):
-        with self.assertRaises(SchemaStructureError):
-            merge_schemas(
-                OrderedDict({
-                    'invalid': parse(ISS.missing_type_schema)
-                })
-            )
 
     def test_type_conflict_merge(self):
         with self.assertRaises(SchemaNameConflictError):
@@ -414,7 +404,3 @@ class TestMergeSchemas(unittest.TestCase):
                     'second': parse(extra_directive_schema)
                 })
             )
-
-    def test_illegal_double_underscore_name_single_merge(self):
-        with self.assertRaises(InvalidTypeNameError):
-            merge_schemas(OrderedDict({'invalid': parse(ISS.double_underscore_schema)}))

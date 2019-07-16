@@ -1,15 +1,14 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
-from copy import deepcopy
 
-from graphql import build_ast_schema
+from graphql import build_ast_schema, parse
 from graphql.language import ast as ast_types
 from graphql.language.printer import print_ast
 import six
 
 from .utils import (
-    SchemaNameConflictError, SchemaStructureError, check_ast_schema_is_valid,
-    check_type_name_is_valid, get_query_type_name
+    SchemaNameConflictError, check_ast_schema_is_valid, check_type_name_is_valid,
+    get_query_type_name
 )
 
 
@@ -96,7 +95,8 @@ def merge_schemas(schemas_dict):
     directives = {}  # Dict[str, DirectiveDefinition]
 
     for cur_schema_id, cur_ast in six.iteritems(schemas_dict):
-        cur_ast = deepcopy(cur_ast)
+        # Prevent aliasing between output and input
+        cur_ast = parse(print_ast(cur_ast))  # much faster than deepcopy
 
         # Check input schema satisfies various structural requirements
         check_ast_schema_is_valid(cur_ast)

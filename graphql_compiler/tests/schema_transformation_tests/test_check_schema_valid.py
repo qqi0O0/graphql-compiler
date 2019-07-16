@@ -7,13 +7,21 @@ from graphql import parse
 from ...schema_transformation.utils import (
     InvalidTypeNameError, SchemaStructureError, check_ast_schema_is_valid
 )
-from .input_schema_strings import InputSchemaStrings as ISS
 
 
 class TestCheckSchemaValid(unittest.TestCase):
     def test_missing_type_schema(self):
+        schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              Human: Human
+            }
+        ''')
         with self.assertRaises(SchemaStructureError):
-            check_ast_schema_is_valid(parse(ISS.missing_type_schema))
+            check_ast_schema_is_valid(parse(schema_string))
 
     def test_schema_extension(self):
         schema_string = dedent('''\
@@ -113,8 +121,21 @@ class TestCheckSchemaValid(unittest.TestCase):
             check_ast_schema_is_valid(parse(schema_string))
 
     def test_illegal_double_underscore_name(self):
+        schema_string = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type SchemaQuery {
+              __Human: __Human
+            }
+
+            type __Human {
+              id: String
+            }
+        ''')
         with self.assertRaises(InvalidTypeNameError):
-            check_ast_schema_is_valid(parse(ISS.double_underscore_schema))
+            check_ast_schema_is_valid(parse(schema_string))
 
     def test_illegal_reserved_name_type(self):
         schema_string = dedent('''\

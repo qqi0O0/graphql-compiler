@@ -331,5 +331,5 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
-    # TODO: 
+    # TODO:
     # ObjectField, ObjectValue (unclear)
