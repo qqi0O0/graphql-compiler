@@ -92,8 +92,12 @@ def get_scalar_names(schema):
     return scalars
 
 
-class CheckValidTypesVisitor(Visitor):
-    """Check that the AST does not contain disallowed or unexpected types."""
+class CheckValidTypesAndNamesVisitor(Visitor):
+    """Check that the AST does not contain invalid types or types with invalid names.
+
+    If AST contains invalid types, raise SchemaStructureError; if AST contains types with
+    invalid names, raise InvalidTypeNameError.
+    """
     disallowed_types = frozenset({  # types not supported in renaming or merging
         'InputObjectTypeDefinition',
         'TypeExtensionDefinition',
@@ -110,13 +114,21 @@ class CheckValidTypesVisitor(Visitor):
         'Variable',
         'VariableDefinition',
     })
+    check_name_validity_types = frozenset({  # nodes whose name need to be checked
+        'EnumTypeDefinition',
+        'InterfaceTypeDefinition',
+        'ObjectTypeDefinition',
+        'ScalarTypeDefinition',
+        'UnionTypeDefinition',
+    })
 
     def enter(self, node, key, parent, path, ancestors):
-        """Raise error if node is of a bad type.
+        """Raise error if node is of a invalid type or has an invalid name.
 
         Raises:
             - SchemaStructureError if the node is an InputObjectTypeDefinition,
               TypeExtensionDefinition, or a type that shouldn't exist in a schema definition
+            - InvalidTypeNameError if a node has an invalid name
         """
         node_type = type(node).__name__
         if node_type in self.disallowed_types:
@@ -127,25 +139,7 @@ class CheckValidTypesVisitor(Visitor):
             raise SchemaStructureError(
                 u'Node type "{}" unexpected in schema AST'.format(node_type)
             )
-
-
-class CheckTypeNamesValidVisitor(Visitor):
-    """Check that every type or scalar defined has a valid name.
-
-    If not, raise InvalidTypeNameError.
-    """
-    check_name_validity_types = frozenset({
-        'EnumTypeDefinition',
-        'InterfaceTypeDefinition',
-        'ObjectTypeDefinition',
-        'ScalarTypeDefinition',
-        'UnionTypeDefinition',
-    })
-
-    def enter(self, node, key, parent, path, ancestors):
-        """Upon entering the definition of a type or scalar, check that its name is valid."""
-        node_type = type(node).__name__
-        if node_type in self.check_name_validity_types:
+        elif node_type in self.check_name_validity_types:
             check_type_name_is_valid(node.name.value)
 
 
@@ -225,9 +219,7 @@ def check_ast_schema_is_valid(ast):
             u'Renaming schemas that contain subscriptions is currently not supported.'
         )
 
-    visit(ast, CheckValidTypesVisitor())
-
-    visit(ast, CheckTypeNamesValidVisitor())
+    visit(ast, CheckValidTypesAndNamesVisitor())
 
     query_type = get_query_type_name(schema)
     visit(ast, CheckQueryTypeFieldsNameMatchVisitor(query_type))
