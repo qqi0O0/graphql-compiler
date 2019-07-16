@@ -7,18 +7,31 @@ from graphql.language.printer import print_ast
 
 from graphql_compiler.schema_transformation.rename_query import rename_query
 
-from .input_query_strings import InputQueryStrings as IQS
 from .input_schema_strings import InputSchemaStrings as ISS
 
 
 class TestDemangleQuery(unittest.TestCase):
     def test_no_rename(self):
-        renamed_query = rename_query(parse(IQS.basic_named_query), {})
-        self.assertEqual(IQS.basic_named_query, print_ast(renamed_query))
+        query_string = dedent('''\
+            query HumanIdQuery {
+              Human {
+                id
+              }
+            }
+        ''')
+        renamed_query = rename_query(parse(query_string), {})
+        self.assertEqual(query_string, print_ast(renamed_query))
 
     def test_rename_named_query(self):
+        query_string = dedent('''\
+            query HumanIdQuery {
+              Human {
+                id
+              }
+            }
+        ''')
         renamed_query = rename_query(
-            parse(IQS.basic_named_query),
+            parse(query_string),
             {
                 'Human': 'NewHuman',
                 'HumanIdQuery': 'NewHumanIdQuery',
@@ -35,13 +48,27 @@ class TestDemangleQuery(unittest.TestCase):
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     def test_original_unmodified(self):
-        ast = parse(IQS.basic_named_query)
-        rename_query(parse(IQS.basic_named_query), {'Human': 'NewHuman'})
-        self.assertEqual(ast, parse(IQS.basic_named_query))
+        query_string = dedent('''\
+            query HumanIdQuery {
+              Human {
+                id
+              }
+            }
+        ''')
+        ast = parse(query_string)
+        rename_query(parse(query_string), {'Human': 'NewHuman'})
+        self.assertEqual(ast, parse(query_string))
 
     def test_rename_unnamed_query(self):
+        query_string = dedent('''\
+           {
+              Human {
+                id
+              }
+            }
+        ''')
         renamed_query = rename_query(
-            parse(IQS.basic_unnamed_query),
+            parse(query_string),
             {
                 'Human': 'NewHuman',
                 'id': 'Id',
@@ -57,8 +84,22 @@ class TestDemangleQuery(unittest.TestCase):
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     def test_rename_nested_query(self):
+        query_string = dedent('''\
+            query NestedQuery {
+              Human {
+                name
+                friends {
+                  name
+                  appearsIn
+                  friends {
+                    name
+                  }
+                }
+              }
+            }
+        ''')
         renamed_query = rename_query(
-            parse(IQS.nested_query),
+            parse(query_string),
             {
                 'Human': 'NewHuman',
                 'name': 'Name',
@@ -132,8 +173,15 @@ class TestDemangleQuery(unittest.TestCase):
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     def test_single_alias(self):
+        query_string = dedent('''\
+            query FetchLukeAliased {
+              luke: Human(id: "1000") {
+                name
+              }
+            }
+        ''')
         renamed_query = rename_query(
-            parse(IQS.alias_query),
+            parse(query_string),
             {
                 'Human': 'NewHuman',
                 'luke': 'Luke',
@@ -150,7 +198,17 @@ class TestDemangleQuery(unittest.TestCase):
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     def test_multiple_aliases(self):
-        renamed_query = rename_query(parse(IQS.multiple_aliases_query), {'Human': 'NewHuman'})
+        query_string = dedent('''\
+            query FetchLukeAndLeiaAliased {
+              luke: Human(id: "1000") {
+                name
+              }
+              leia: Human(id: "1003") {
+                name
+              }
+            }
+        ''')
+        renamed_query = rename_query(parse(query_string), {'Human': 'NewHuman'})
         renamed_query_string = dedent('''\
             query FetchLukeAndLeiaAliased {
               luke: NewHuman(id: "1000") {
@@ -164,8 +222,23 @@ class TestDemangleQuery(unittest.TestCase):
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     def test_fragment(self):
+        query_string = dedent('''\
+            query UseFragment {
+              luke: Human(id: "1000") {
+                ...HumanFragment
+              }
+              leia: Human(id: "1003") {
+                ...HumanFragment
+              }
+            }
+
+            fragment HumanFragment on Human {
+              name
+              homePlanet
+            }
+        ''')
         renamed_query = rename_query(
-            parse(IQS.fragment_query),
+            parse(query_string),
             {
                 'Human': 'NewHuman',
                 'HumanFragment': 'NewHumanFragment',
@@ -190,8 +263,18 @@ class TestDemangleQuery(unittest.TestCase):
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
     def test_inline_fragment(self):
+        query_string = dedent('''\
+            query FieldInInlineFragment {
+              Character {
+                name
+                ... on Human {
+                  age
+                }
+              }
+            }
+        ''')
         renamed_query = rename_query(
-            parse(IQS.inline_fragment_query),
+            parse(query_string),
             {
                 'Human': 'NewHuman',
                 'Character': 'NewCharacter',
