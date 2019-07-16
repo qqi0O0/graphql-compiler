@@ -1,7 +1,8 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
+from copy import deepcopy
 
-from graphql import build_ast_schema, parse
+from graphql import build_ast_schema
 from graphql.language import ast as ast_types
 from graphql.language.printer import print_ast
 import six
@@ -96,7 +97,7 @@ def merge_schemas(schemas_dict):
 
     for cur_schema_id, cur_ast in six.iteritems(schemas_dict):
         # Prevent aliasing between output and input
-        cur_ast = parse(print_ast(cur_ast))  # much faster than deepcopy
+        cur_ast = deepcopy(cur_ast)
 
         # Check input schema satisfies various structural requirements
         check_ast_schema_is_valid(cur_ast)
