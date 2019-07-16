@@ -55,16 +55,10 @@ def rename_schema(ast, renamings):
     """
     ast = deepcopy(ast)
 
-    # Check that the AST can be built into a valid schema
-    try:
-        # May raise Exception -- see graphql/utils/build_ast_schema.py
-        schema = build_ast_schema(ast)
-    except Exception as e:
-        raise SchemaStructureError(u'Input is not a valid schema. Message: {}'.format(e))
+    # Check input schema satisfies various structural requirements
+    check_ast_schema_is_valid(ast)
 
-    # Check additional structural requirements
-    check_ast_schema_is_valid(ast, schema)
-
+    schema = build_ast_schema(ast)
     query_type = get_query_type_name(schema)
     scalars = get_scalar_names(schema)
 
@@ -139,20 +133,30 @@ class RenameSchemaTypesVisitor(Visitor):
         'Document',
         'EnumValue',
         'EnumValueDefinition',
+        'Field',
         'FieldDefinition',
         'FloatValue',
+        'FragmentDefinition',
+        'FragmentSpread',
+        'InlineFragment',
+        'InputObjectTypeDefinition',
         'InputValueDefinition',
         'IntValue',
         'ListType',
         'ListValue',
         'Name',
         'NonNullType',
+        'ObjectField',
+        'ObjectValue',
+        'OperationDefinition',
         'OperationTypeDefinition',
-        'SchemaDefinition',
-        'StringValue',
-    })
-    check_name_validity_types = frozenset({
         'ScalarTypeDefinition',
+        'SchemaDefinition',
+        'SelectionSet',
+        'StringValue',
+        'TypeExtensionDefinition',
+        'Variable',
+        'VariableDefinition',
     })
     rename_types = frozenset({
         'EnumTypeDefinition',
@@ -160,22 +164,6 @@ class RenameSchemaTypesVisitor(Visitor):
         'NamedType',
         'ObjectTypeDefinition',
         'UnionTypeDefinition',
-    })
-    unexpected_types = frozenset({
-        'Field',
-        'FragmentDefinition',
-        'FragmentSpread',
-        'InlineFragment',
-        'ObjectField',
-        'ObjectValue',
-        'OperationDefinition',
-        'SelectionSet',
-        'Variable',
-        'VariableDefinition',
-    })
-    disallowed_types = frozenset({
-        'InputObjectTypeDefinition',
-        'TypeExtensionDefinition',
     })
 
     def __init__(self, renamings, query_type, scalar_types):
@@ -213,7 +201,6 @@ class RenameSchemaTypesVisitor(Visitor):
               existing types, scalars, or builtin types
         """
         name_string = node.value
-        check_type_name_is_valid(name_string)
 
         if name_string == self.query_type or name_string in self.scalar_types:
             return
@@ -246,22 +233,9 @@ class RenameSchemaTypesVisitor(Visitor):
         if node_type in self.noop_types:
             # Do nothing, continue traversal
             return None
-        elif node_type in self.check_name_validity_types:
-            # Check the current name is valid, do not rename, continue traversal
-            check_type_name_is_valid(node.name.value)
         elif node_type in self.rename_types:
             # Rename and put into record the name attribute of current node; continue traversal
             self._rename_name_and_add_to_record(node.name)
-        elif node_type in self.unexpected_types:
-            # Node type unexpected in schema definition, raise error
-            raise SchemaStructureError(
-                u'Node type "{}" unexpected in schema AST'.format(node_type)
-            )
-        elif node_type in self.disallowed_types:
-            # Node type possible in schema definition but disallowed, raise error
-            raise SchemaStructureError(
-                u'Node type "{}" not allowed'.format(node_type)
-            )
         else:
             # All Node types should've been taken care of, this line should never be reached
             raise AssertionError(u'Missed type: "{}"'.format(node_type))

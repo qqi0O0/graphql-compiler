@@ -1,6 +1,7 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 import re
 
+from graphql import build_ast_schema
 from graphql.language.ast import NamedType
 from graphql.language.visitor import Visitor, visit
 from graphql.type.definition import GraphQLScalarType
@@ -91,6 +92,63 @@ def get_scalar_names(schema):
     return scalars
 
 
+class CheckValidTypesVisitor(Visitor):
+    """Check that the AST does not contain disallowed or unexpected types."""
+    disallowed_types = frozenset({  # types not supported in renaming or merging
+        'InputObjectTypeDefinition',
+        'TypeExtensionDefinition',
+    })
+    unexpected_types = frozenset({  # types not expected to be found in schema definition
+        'Field',
+        'FragmentDefinition',
+        'FragmentSpread',
+        'InlineFragment',
+        'ObjectField',
+        'ObjectValue',
+        'OperationDefinition',
+        'SelectionSet',
+        'Variable',
+        'VariableDefinition',
+    })
+
+    def enter(self, node, *args):
+        """Raise error if node is of a bad type.
+
+        Raises:
+            - SchemaStructureError if the node is an InputObjectTypeDefinition,
+              TypeExtensionDefinition, or a type that shouldn't exist in a schema definition
+        """
+        node_type = type(node).__name__
+        if node_type in self.disallowed_types:
+            raise SchemaStructureError(
+                u'Node type "{}" not allowed.'.format(node_type)
+            )
+        elif node_type in self.unexpected_types:
+            raise SchemaStructureError(
+                u'Node type "{}" unexpected in schema AST'.format(node_type)
+            )
+
+
+class CheckTypeNamesValidVisitor(Visitor):
+    """Check that every type or scalar defined has a valid name.
+
+    If not, raise InvalidTypeNameError.
+    """
+    check_name_validity_types = frozenset({
+        'EnumTypeDefinition',
+        'InterfaceTypeDefinition',
+        'ObjectTypeDefinition',
+        'ScalarTypeDefinition',
+        'UnionTypeDefinition',
+    })
+
+    def enter(self, node, *args):
+        """Upon entering the definition of a type or scalar, check that its name is valid."""
+        node_type = type(node).__name__
+        if node_type in self.check_name_validity_types:
+            check_type_name_is_valid(node.name.value)
+
+
 class CheckQueryTypeFieldsNameMatchVisitor(Visitor):
     """Check that every query type field's name is identical to the type it queries.
 
@@ -136,35 +194,28 @@ class CheckQueryTypeFieldsNameMatchVisitor(Visitor):
                 )
 
 
-def _check_query_type_fields_name_match(ast, query_type):
-    """Check every query type field's name is identical to the type it queries.
-
-    Args:
-        ast: Document representing a schema
-        query_type: str, name of the query type
-
-    Raises:
-        - SchemaStructureError if any query type field name is not identical to the name of the
-          type that it queries
-    """
-    visitor = CheckQueryTypeFieldsNameMatchVisitor(query_type)
-    visit(ast, visitor)
-
-
-def check_ast_schema_is_valid(ast, schema):
+def check_ast_schema_is_valid(ast):
     """Check the schema satisfies structural requirements for rename and merge.
 
-    In particular, check that the schema contains no mutations, no subscriptions, and all query
-    type field names match the types they query.
+    In particular, check that the schema contains no mutations, no subscriptions, no
+    InputObjectTypeDefinitions, no TypeExtensionDefinitions, all type names are valid and not
+    reserved (not starting with double underscores), and all query type field names match the
+    types they query.
 
     Args:
         ast: Document, representing a schema
-        schema: GraphQLSchema, representing the same schema as ast
 
     Raises:
-        - SchemaStructureError if the schema contains mutations, contains subscriptions, or some
-          query type field name does not match the type it queries.
+        - SchemaStructureError if the AST cannot be built into a valid schema, if the schema
+          contains mutations, subscriptions, InputObjectTypeDefinitions, TypeExtensionsDefinitions,
+          or if any query type field does not match the queried type.
+        - InvalidTypeNameError if a type has a type name that is invalid or reserved
     """
+    try:
+        schema = build_ast_schema(ast)
+    except Exception as e:  # Can't be more specific -- see graphql/utils/build_ast_schema.py
+        raise SchemaStructureError(u'Input is not a valid schema. Message: {}'.format(e))
+
     if schema.get_mutation_type() is not None:
         raise SchemaStructureError(
             u'Renaming schemas that contain mutations is currently not supported.'
@@ -174,6 +225,9 @@ def check_ast_schema_is_valid(ast, schema):
             u'Renaming schemas that contain subscriptions is currently not supported.'
         )
 
-    query_type = get_query_type_name(schema)
+    visit(ast, CheckValidTypesVisitor())
 
-    _check_query_type_fields_name_match(ast, query_type)
+    visit(ast, CheckTypeNamesValidVisitor())
+
+    query_type = get_query_type_name(schema)
+    visit(ast, CheckQueryTypeFieldsNameMatchVisitor(query_type))

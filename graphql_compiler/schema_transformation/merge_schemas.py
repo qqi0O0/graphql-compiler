@@ -98,14 +98,10 @@ def merge_schemas(schemas_dict):
     for cur_schema_id, cur_ast in six.iteritems(schemas_dict):
         cur_ast = deepcopy(cur_ast)
 
-        try:
-            cur_schema = build_ast_schema(cur_ast)
-        except Exception as e:
-            raise SchemaStructureError(u'Input is not a valid schema. Message: {}'.format(e))
+        # Check input schema satisfies various structural requirements
+        check_ast_schema_is_valid(cur_ast)
 
-        # Check additional structural requirements
-        check_ast_schema_is_valid(cur_ast, cur_schema)
-
+        cur_schema = build_ast_schema(cur_ast)
         cur_query_type = get_query_type_name(cur_schema)
 
         # Merge cur_ast into merged_schema_ast
