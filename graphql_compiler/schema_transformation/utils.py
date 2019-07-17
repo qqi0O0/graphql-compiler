@@ -65,7 +65,9 @@ def check_schema_identifier_is_valid(identifier):
     illegal_characters = frozenset(identifier) - _alphanumeric_and_underscore
     if illegal_characters:
         raise ValueError(
-            u'Schema identifier contains illegal characters: {}'.format(illegal_characters)
+            u'Schema identifier "{}" contains illegal characters: {}'.format(
+                identifier, illegal_characters
+            )
         )
 
 
