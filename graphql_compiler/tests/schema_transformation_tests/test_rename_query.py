@@ -7,7 +7,6 @@ from graphql.language.printer import print_ast
 
 from graphql_compiler.schema_transformation.rename_query import rename_query
 
-from .input_schema_strings import InputSchemaStrings as ISS
 from ...schema_transformation.utils import QueryStructureError
 
 
@@ -221,7 +220,6 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-
 
     def test_inline_fragment(self):
         query_string = dedent('''\

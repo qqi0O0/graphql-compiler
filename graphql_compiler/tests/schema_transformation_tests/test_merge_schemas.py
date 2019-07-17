@@ -458,3 +458,21 @@ class TestMergeSchemas(unittest.TestCase):
                     ('second', parse(extra_directive_schema)),
                 ])
             )
+
+    def test_invalid_identifiers(self):
+        with self.assertRaises(ValueError):
+            merge_schemas(OrderedDict([
+                ('', parse(ISS.basic_schema)),
+            ]))
+        with self.assertRaises(ValueError):
+            merge_schemas(OrderedDict([
+                ('hello\n', parse(ISS.basic_schema)),
+            ]))
+        with self.assertRaises(ValueError):
+            merge_schemas(OrderedDict([
+                ('<script>alert("hello world")</script>', parse(ISS.basic_schema)),
+            ]))
+        with self.assertRaises(ValueError):
+            merge_schemas(OrderedDict([
+                ('\t\b', parse(ISS.basic_schema)),
+            ]))
