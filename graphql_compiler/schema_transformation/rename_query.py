@@ -7,16 +7,6 @@ from graphql.language.visitor import Visitor, visit
 from .utils import QueryStructureError
 
 
-# TODO:
-# Validation happens after all AST to AST transformations, and issues with the input AST in
-# the renaming step can interact poorly with the validation step, causing unhelpful errors
-# (e.g. if query starts with a type coercion, the error user sees would be a name error due to
-# a type not being renamed, not the root cause -- starting with a type coercion)
-# How to validate? How much to validate?
-# Alternatively, behave correctly in edge cases, so that any error present in the input will
-# be intactly present in the output, and will be caught at the validation stage?
-
-
 def rename_query(ast, renamings):
     """Translate all types and root fields (fields of query type) using renamings.
 
@@ -26,7 +16,7 @@ def rename_query(ast, renamings):
 
     Args:
         ast: Document, representing a valid query. It is assumed to have passed GraphQL's
-             builtin validation, through validate(schema, ast). Not modified by this function
+             builtin validation -- validate(schema, ast). ast not modified by this function
         renamings: Dict[str, str], mapping original types/query type field names as appearing
                    in the query to renamed names. Type or query type field names not appearing
                    in the dict will be unchanged
@@ -36,19 +26,19 @@ def rename_query(ast, renamings):
 
     Raises:
         - QueryStrutureError if the ast does not have the expected form; in particular, if the
-          AST contains 
+          AST contains Fragments, or if it contains an InlineFragment at the root level
     """
-    # NOTE: There is a whole section 'validation' in graphql-core that takes in a schema and a
+    # NOTE: There is a validation section in graphql-core that takes in a schema and a
     # query ast, and checks whether the query is valid. This code assumes this validation
     # step has been done on the input AST.
-    if len(ast.definitions) > 1:
+    if len(ast.definitions) > 1:  # includes either multiple queries, or fragment definitions
         raise QueryStructureError(u'Either multiple queries were included, or fragments were '
                                   u'defined.')
 
     query_definition = ast.definitions[0]
 
     for selection in query_definition.selection_set.selections:
-        if not isinstance(selection, ast_types.Field):
+        if not isinstance(selection, ast_types.Field):  # possibly an InlineFragment
             raise QueryStructureError(u'Each root selections must be "Field", '
                                       u'not "{}"'.format(type(selection).__name__))
 
