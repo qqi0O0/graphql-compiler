@@ -8,12 +8,13 @@ from graphql.language.printer import print_ast
 from graphql_compiler.schema_transformation.rename_query import rename_query
 
 from .input_schema_strings import InputSchemaStrings as ISS
+from ...schema_transformation.utils import QueryStructureError
 
 
 class TestDemangleQuery(unittest.TestCase):
     def test_no_rename(self):
         query_string = dedent('''\
-            query HumanIdQuery {
+            {
               Human {
                 id
               }
@@ -22,34 +23,9 @@ class TestDemangleQuery(unittest.TestCase):
         renamed_query = rename_query(parse(query_string), {})
         self.assertEqual(query_string, print_ast(renamed_query))
 
-    def test_rename_named_query(self):
-        query_string = dedent('''\
-            query HumanIdQuery {
-              Human {
-                id
-              }
-            }
-        ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            {
-                'Human': 'NewHuman',
-                'HumanIdQuery': 'NewHumanIdQuery',
-                'id': 'Id',
-            }
-        )
-        renamed_query_string = dedent('''\
-            query HumanIdQuery {
-              NewHuman {
-                id
-              }
-            }
-        ''')
-        self.assertEqual(renamed_query_string, print_ast(renamed_query))
-
     def test_original_unmodified(self):
         query_string = dedent('''\
-            query HumanIdQuery {
+            {
               Human {
                 id
               }
@@ -83,9 +59,34 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
+    def test_rename_named_query(self):
+        query_string = dedent('''\
+            query HumanIdQuery {
+              Human {
+                id
+              }
+            }
+        ''')
+        renamed_query = rename_query(
+            parse(query_string),
+            {
+                'Human': 'NewHuman',
+                'HumanIdQuery': 'NewHumanIdQuery',
+                'id': 'Id',
+            }
+        )
+        renamed_query_string = dedent('''\
+            query HumanIdQuery {
+              NewHuman {
+                id
+              }
+            }
+        ''')
+        self.assertEqual(renamed_query_string, print_ast(renamed_query))
+
     def test_rename_nested_query(self):
         query_string = dedent('''\
-            query NestedQuery {
+            {
               Human {
                 name
                 friends {
@@ -107,7 +108,7 @@ class TestDemangleQuery(unittest.TestCase):
             }
         )
         renamed_query_string = dedent('''\
-            query NestedQuery {
+            {
               NewHuman {
                 name
                 friends {
@@ -124,7 +125,7 @@ class TestDemangleQuery(unittest.TestCase):
 
     def test_field_with_argument(self):
         query_string = dedent('''\
-            query FetchByIdQuery {
+            {
               Human(id: "1000") {
                 name
               }
@@ -139,7 +140,7 @@ class TestDemangleQuery(unittest.TestCase):
             }
         )
         renamed_query_string = dedent('''\
-            query FetchByIdQuery {
+            {
               NewHuman(id: "1000") {
                 name
               }
@@ -174,7 +175,7 @@ class TestDemangleQuery(unittest.TestCase):
 
     def test_single_alias(self):
         query_string = dedent('''\
-            query FetchLukeAliased {
+            {
               luke: Human(id: "1000") {
                 name
               }
@@ -189,7 +190,7 @@ class TestDemangleQuery(unittest.TestCase):
             }
         )
         renamed_query_string = dedent('''\
-            query FetchLukeAliased {
+            {
               luke: NewHuman(id: "1000") {
                 name
               }
@@ -199,7 +200,7 @@ class TestDemangleQuery(unittest.TestCase):
 
     def test_multiple_aliases(self):
         query_string = dedent('''\
-            query FetchLukeAndLeiaAliased {
+            {
               luke: Human(id: "1000") {
                 name
               }
@@ -210,61 +211,21 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
         renamed_query = rename_query(parse(query_string), {'Human': 'NewHuman'})
         renamed_query_string = dedent('''\
-            query FetchLukeAndLeiaAliased {
-              luke: NewHuman(id: "1000") {
-                name
-              }
-              leia: NewHuman(id: "1003") {
-                name
-              }
-            }
-        ''')
-        self.assertEqual(renamed_query_string, print_ast(renamed_query))
-
-    def test_fragment(self):
-        query_string = dedent('''\
-            query UseFragment {
-              luke: Human(id: "1000") {
-                ...HumanFragment
-              }
-              leia: Human(id: "1003") {
-                ...HumanFragment
-              }
-            }
-
-            fragment HumanFragment on Human {
-              name
-              homePlanet
-            }
-        ''')
-        renamed_query = rename_query(
-            parse(query_string),
             {
-                'Human': 'NewHuman',
-                'HumanFragment': 'NewHumanFragment',
-                'name': 'Name',
-            }
-        )
-        renamed_query_string = dedent('''\
-            query UseFragment {
               luke: NewHuman(id: "1000") {
-                ...HumanFragment
+                name
               }
               leia: NewHuman(id: "1003") {
-                ...HumanFragment
+                name
               }
-            }
-
-            fragment HumanFragment on NewHuman {
-              name
-              homePlanet
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
+
 
     def test_inline_fragment(self):
         query_string = dedent('''\
-            query FieldInInlineFragment {
+            {
               Character {
                 name
                 ... on Human {
@@ -281,7 +242,7 @@ class TestDemangleQuery(unittest.TestCase):
             }
         )
         renamed_query_string = dedent('''\
-            query FieldInInlineFragment {
+            {
               NewCharacter {
                 name
                 ... on NewHuman {
@@ -292,88 +253,41 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
-    def test_nested_fragments(self):
+    def test_nested_inline(self):
         query_string = dedent('''\
-            query Query {
-              Human {
-                ...HumanInfoFragment
-              }
-            }
-
-            fragment HumanInfoFragment on Human {
-              name
-              ...HumanAgeFragment
-            }
-
-            fragment HumanAgeFragment on Human {
-              age
-            }
-        ''')
-        renamed_query = rename_query(
-            parse(query_string),
             {
-                'Human': 'NewHuman',
-                'name': 'Name',
-                'age': 'Age',
-            }
-        )
-        renamed_query_string = dedent('''\
-            query Query {
-              NewHuman {
-                ...HumanInfoFragment
-              }
-            }
-
-            fragment HumanInfoFragment on NewHuman {
-              name
-              ...HumanAgeFragment
-            }
-
-            fragment HumanAgeFragment on NewHuman {
-              age
-            }
-        ''')
-        self.assertEqual(renamed_query_string, print_ast(renamed_query))
-
-    def test_nested_fragment_with_inline(self):
-        query_string = dedent('''\
-            query Query {
               Character {
-                name
-                ...CharacterFragment
-              }
-            }
-
-            fragment CharacterFragment on Character {
-              id
-              ... on Human {
-                age
+                friend {
+                  ... on Human {
+                    family {
+                      ... on Child {
+                        age
+                      }
+                    }
+                  }
+                }
               }
             }
         ''')
         renamed_query = rename_query(
             parse(query_string),
             {
-                'Human': 'NewHuman',
                 'Character': 'NewCharacter',
-                'CharacterFragment': 'NewCharacterFragment',
-                'name': 'Name',
-                'id': 'Id',
-                'age': 'Age',
+                'Child': 'NewChild'
             }
         )
         renamed_query_string = dedent('''\
-            query Query {
+            {
               NewCharacter {
-                name
-                ...CharacterFragment
-              }
-            }
-
-            fragment CharacterFragment on NewCharacter {
-              id
-              ... on NewHuman {
-                age
+                friend {
+                  ... on Human {
+                    family {
+                      ... on NewChild {
+                        age
+                      }
+                    }
+                  }
+                }
               }
             }
         ''')
@@ -413,6 +327,58 @@ class TestDemangleQuery(unittest.TestCase):
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
+
+    def test_invalid_start_with_inline(self):
+        query_string = dedent('''\
+            {
+              ... on RootSchemaQuery {
+                Human {
+                  name
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(QueryStructureError):
+            rename_query(parse(query_string), {})
+
+    def test_invalid_contains_fragment(self):
+        query_string = dedent('''\
+            {
+              luke: Human(id: "1000") {
+                ...HumanFragment
+              }
+              leia: Human(id: "1003") {
+                ...HumanFragment
+              }
+            }
+
+            fragment HumanFragment on Human {
+              name
+              homePlanet
+            }
+        ''')
+        with self.assertRaises(QueryStructureError):
+            rename_query(parse(query_string), {})
+
+    def test_invalid_nested_fragments(self):
+        query_string = dedent('''\
+            {
+              Human {
+                ...HumanInfoFragment
+              }
+            }
+
+            fragment HumanInfoFragment on Human {
+              name
+              ...HumanAgeFragment
+            }
+
+            fragment HumanAgeFragment on Human {
+              age
+            }
+        ''')
+        with self.assertRaises(QueryStructureError):
+            rename_query(parse(query_string), {})
 
     # TODO:
     # ObjectField, ObjectValue (unclear)

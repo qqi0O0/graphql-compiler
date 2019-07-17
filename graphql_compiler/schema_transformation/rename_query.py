@@ -1,39 +1,57 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from copy import deepcopy
 
+from graphql.language import ast as ast_types
 from graphql.language.visitor import Visitor, visit
+
+from .utils import QueryStructureError
+
+
+# TODO:
+# Validation happens after all AST to AST transformations, and issues with the input AST in
+# the renaming step can interact poorly with the validation step, causing unhelpful errors
+# (e.g. if query starts with a type coercion, the error user sees would be a name error due to
+# a type not being renamed, not the root cause -- starting with a type coercion)
+# How to validate? How much to validate?
+# Alternatively, behave correctly in edge cases, so that any error present in the input will
+# be intactly present in the output, and will be caught at the validation stage?
 
 
 def rename_query(ast, renamings):
-    """Translate all types and entry point fields (fields of query type) using renamings.
+    """Translate all types and root fields (fields of query type) using renamings.
 
     Most fields (fields of types other than the query type) will not be renamed. Any type
     or field that does not appear in renamings will be unchanged.
     Roughly speaking, rename_query renames the same elements as rename_schema.
 
-    This may be used in conjunction with rename_schema. For instance, one may pass in a query
-    written in the renamed schema's types and fields, as well as reverse_name_map of the
-    renamed schema, to receive the same query written in the original schema's types and fields.
-
     Args:
-        ast: Document, representing a valid query; not modified by this function
+        ast: Document, representing a valid query. It is assumed to have passed GraphQL's
+             builtin validation, through validate(schema, ast). Not modified by this function
         renamings: Dict[str, str], mapping original types/query type field names as appearing
                    in the query to renamed names. Type or query type field names not appearing
                    in the dict will be unchanged
 
     Returns:
         Document, a new AST representing the renamed query
-    """
-    # Question: Allow document to represent not 1, but any number of queries? There is no
-    # change to the code.
-    # Question: Disallow fragments, and raise error if we see one?
-    # Question: How much do we check the validity of the input ast?
 
+    Raises:
+        - QueryStrutureError if the ast does not have the expected form; in particular, if the
+          AST contains 
+    """
     # NOTE: There is a whole section 'validation' in graphql-core that takes in a schema and a
-    # query ast, and checks whether the query is valid. This code currently does not check for
-    # validity of the input or remaing at all, but assumes that the input is a valid query ast
-    # and the renamings dict is so that the output is a valid query. If it is not, the
-    # output may be strange or unexpected, but no errors will be raised.
+    # query ast, and checks whether the query is valid. This code assumes this validation
+    # step has been done on the input AST.
+    if len(ast.definitions) > 1:
+        raise QueryStructureError(u'Either multiple queries were included, or fragments were '
+                                  u'defined.')
+
+    query_definition = ast.definitions[0]
+
+    for selection in query_definition.selection_set.selections:
+        if not isinstance(selection, ast_types.Field):
+            raise QueryStructureError(u'Each root selections must be "Field", '
+                                      u'not "{}"'.format(type(selection).__name__))
+
     ast = deepcopy(ast)
 
     visitor = RenameQueryVisitor(renamings)
@@ -44,14 +62,13 @@ def rename_query(ast, renamings):
 
 class RenameQueryVisitor(Visitor):
     def __init__(self, renamings):
-        """Create a visitor for renaming types and entry point fields in a query AST.
+        """Create a visitor for renaming types and fields of the query type in a query AST.
 
         Args:
             renamings: Dict[str, str], mapping from original type name to renamed type name.
                        Any name not in the dict will be unchanged
         """
         self.renamings = renamings
-        self.in_query = False
         self.selection_set_level = 0
 
     def _rename_name(self, node):
@@ -73,16 +90,6 @@ class RenameQueryVisitor(Visitor):
         # They may appear in, for example, InlineFragment
         self._rename_name(node.name)
 
-    def enter_OperationDefinition(self, node, *args):
-        """If node's operation is query, record that we entered a query definition."""
-        if node.operation == 'query':
-            self.in_query = True
-
-    def leave_OperationDefinition(self, node, *args):
-        """If node's operation is query, record that we left a query definition."""
-        if node.operation == 'query':
-            self.in_query = False
-
     def enter_SelectionSet(self, node, *args):
         """Record that we entered another nested level of selections."""
         self.selection_set_level += 1
@@ -94,11 +101,10 @@ class RenameQueryVisitor(Visitor):
     def enter_Field(self, node, *args):
         """Rename entry point fields, aka fields of the query type."""
         # For a Field to be a field of the query type, it needs to be:
-        # - Under the query operation definition (if a Field is not under the query operation
-        # definition, it may be a part of a Fragment definition)
         # - The first level of selections (fields in more nested selections are normal fields,
         # and should not be modified)
-        # As a query may not start with type coercion (aka inline fragment), an element in the
-        # first level of selection set must be a field of the query type
-        if self.in_query and self.selection_set_level == 1:
+        # As a query may not start with type coercion (aka inline fragment), and
+        # FragmentDefinition is not allowed, an element in the first level of selection set
+        # in a definition must be a field of the query type
+        if self.selection_set_level == 1:
             self._rename_name(node.name)

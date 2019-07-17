@@ -33,7 +33,15 @@ class InvalidTypeNameError(SchemaTransformError):
 
 
 class SchemaNameConflictError(SchemaTransformError):
-    """Raised when renaming types or fields cause name conflicts."""
+    """Raised when renaming or merging types or fields cause name conflicts."""
+
+
+class QueryStructureError(SchemaTransformError):
+    """Raised if an input query's structure is illegal.
+
+    This may happen if a query starts with an inline fragment, or contains a FragmentDefinition
+    or FragmentSpread as fragments are not supported by the compiler.
+    """
 
 
 _graphql_type_name_pattern = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
