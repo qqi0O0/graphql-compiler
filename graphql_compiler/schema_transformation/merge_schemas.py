@@ -71,7 +71,8 @@ def merge_schemas(schemas_dict):
     Returns:
         MergedSchemaDescriptor, a namedtuple that contains the AST of the merged schema,
         and the map from names of types/query type fields to the id of the schema that they
-        came from
+        came from. Scalars and directives will not appear in the map, as the same set of
+        scalars and directives are expected to be defined in every schema.
 
     Raises:
         - SchemaStructureError if the schema does not have the expected form; in particular, if
