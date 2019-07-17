@@ -32,15 +32,18 @@ def rename_query(ast, renamings):
     # query ast, and checks whether the query is valid. This code assumes this validation
     # step has been done on the input AST.
     if len(ast.definitions) > 1:  # includes either multiple queries, or fragment definitions
-        raise QueryStructureError(u'Either multiple queries were included, or fragments were '
-                                  u'defined.')
+        raise QueryStructureError(
+            u'Only one query may be included, and fragments are not allowed.'
+        )
 
     query_definition = ast.definitions[0]
 
     for selection in query_definition.selection_set.selections:
         if not isinstance(selection, ast_types.Field):  # possibly an InlineFragment
-            raise QueryStructureError(u'Each root selections must be "Field", '
-                                      u'not "{}"'.format(type(selection).__name__))
+            raise QueryStructureError(
+                u'Each root selections must be of type "Field", '
+                u'not "{}"'.format(type(selection).__name__)
+            )
 
     ast = deepcopy(ast)
 
@@ -76,8 +79,7 @@ class RenameQueryVisitor(Visitor):
 
     def enter_NamedType(self, node, *args):
         """Rename name of node."""
-        # NamedType nodes describe types in the schema and should always be renamed
-        # They may appear in, for example, InlineFragment
+        # NamedType nodes describe types in the schema, appearing in InlineFragments
         self._rename_name(node.name)
 
     def enter_SelectionSet(self, node, *args):
@@ -90,11 +92,11 @@ class RenameQueryVisitor(Visitor):
 
     def enter_Field(self, node, *args):
         """Rename entry point fields, aka fields of the query type."""
-        # For a Field to be a field of the query type, it needs to be:
-        # - The first level of selections (fields in more nested selections are normal fields,
-        # and should not be modified)
-        # As a query may not start with type coercion (aka inline fragment), and
-        # FragmentDefinition is not allowed, an element in the first level of selection set
-        # in a definition must be a field of the query type
+        # For a Field to be a field of the query type, it needs to be the first level of
+        # selections (fields in more nested selections are normal fields that should not be
+        # modified)
+        # As a query may not start with an inline fragment, and FragmentDefinition is not allowed,
+        # an element in the first level of selection set in a definition must be a field of
+        # the query type
         if self.selection_set_level == 1:
             self._rename_name(node.name)

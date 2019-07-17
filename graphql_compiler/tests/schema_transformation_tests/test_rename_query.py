@@ -341,7 +341,7 @@ class TestDemangleQuery(unittest.TestCase):
         with self.assertRaises(QueryStructureError):
             rename_query(parse(query_string), {})
 
-    def test_invalid_contains_fragment(self):
+    def test_invalid_fragment(self):
         query_string = dedent('''\
             {
               luke: Human(id: "1000") {
@@ -379,6 +379,3 @@ class TestDemangleQuery(unittest.TestCase):
         ''')
         with self.assertRaises(QueryStructureError):
             rename_query(parse(query_string), {})
-
-    # TODO:
-    # ObjectField, ObjectValue (unclear)

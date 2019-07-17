@@ -17,7 +17,7 @@ MergedSchemaDescriptor = namedtuple(
 )
 
 
-def _basic_schema_ast(query_type):
+def _get_basic_schema_ast(query_type):
     """Create a basic AST Document representing a nearly blank schema.
 
     The output AST contains a single query type, whose name is the input string. The query type
@@ -57,9 +57,9 @@ def _basic_schema_ast(query_type):
 def merge_schemas(schemas_dict):
     """Check that input schemas do not contain conflicting definitions, then merge.
 
-    Merged schema will contain all type, interface, enum, scalar, and directive definitions
-    from input schemas. The fields of its query type will be the union of the fields of the
-    query types of each input schema.
+    The merged schema will contain all type, interface, union, enum, scalar, and directive
+    definitions from input schemas. The fields of its query type will be the union of the
+    fields of the query types of each input schema.
 
     Note that the output AST will share mutable objects with input ASTs.
 
@@ -87,7 +87,7 @@ def merge_schemas(schemas_dict):
         raise ValueError(u'Expected a nonzero number of schemas to merge.')
 
     query_type = 'RootSchemaQuery'
-    merged_schema_ast = _basic_schema_ast(query_type)  # Document
+    merged_schema_ast = _get_basic_schema_ast(query_type)  # Document
 
     name_to_schema_id = {}  # Dict[str, str], name of type/interface/enum/union to schema id
     scalars = {'String', 'Int', 'Float', 'Boolean', 'ID'}  # Set[str], user defined + builtins
