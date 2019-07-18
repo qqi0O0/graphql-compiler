@@ -10,9 +10,15 @@ from ..exceptions import GraphQLValidationError
 def rename_query(ast, renamings):
     """Translate names of types and root vertex fields using renamings.
 
-    Root vertex fields are fields of the query type. Other fields will not be renamed.
+    Besides root vertex fields (fields of the query type), no fields will not be renamed.
 
-    This function is intended to be used in conjunction with rename_schema.
+    This function is intended to be used in conjunction with rename_schema. One may rename
+    a schema (perhaps to resolve name conflicts when merging schemas) while the underlying
+    database continues to operate on the original schema. Then, any query written in terms
+    of the renamed schema must be transformed back use original names in the original schema,
+    before being run against the database.
+    The attribute 'reverse_name_map' of a RenamedSchemaDescriptor may be used as input to
+    renamings for this purpose.
 
     Args:
         ast: Document, representing a valid query. It is assumed to have passed GraphQL's

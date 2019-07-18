@@ -39,7 +39,7 @@ class SchemaNameConflictError(SchemaTransformError):
     """Raised when renaming or merging types or fields cause name conflicts."""
 
 
-_alphanumeric_and_underscore = frozenset(string.ascii_letters + string.digits + '_')
+_alphanumeric_and_underscore = frozenset(six.text_type(string.ascii_letters + string.digits + '_'))
 
 
 def check_schema_identifier_is_valid(identifier):
