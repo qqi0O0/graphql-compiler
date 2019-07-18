@@ -7,7 +7,7 @@ from graphql.language.printer import print_ast
 
 from graphql_compiler.schema_transformation.rename_query import rename_query
 
-from ...schema_transformation.utils import QueryStructureError
+from ...exceptions import GraphQLValidationError
 
 
 class TestDemangleQuery(unittest.TestCase):
@@ -336,7 +336,7 @@ class TestDemangleQuery(unittest.TestCase):
               }
             }
         ''')
-        with self.assertRaises(QueryStructureError):
+        with self.assertRaises(GraphQLValidationError):
             rename_query(parse(query_string), {})
 
     def test_invalid_fragment(self):
@@ -355,7 +355,7 @@ class TestDemangleQuery(unittest.TestCase):
               homePlanet
             }
         ''')
-        with self.assertRaises(QueryStructureError):
+        with self.assertRaises(GraphQLValidationError):
             rename_query(parse(query_string), {})
 
     def test_invalid_nested_fragments(self):
@@ -375,5 +375,5 @@ class TestDemangleQuery(unittest.TestCase):
               age
             }
         ''')
-        with self.assertRaises(QueryStructureError):
+        with self.assertRaises(GraphQLValidationError):
             rename_query(parse(query_string), {})

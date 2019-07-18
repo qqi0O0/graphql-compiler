@@ -4,7 +4,7 @@ from copy import deepcopy
 from graphql.language import ast as ast_types
 from graphql.language.visitor import Visitor, visit
 
-from .utils import QueryStructureError
+from ..exceptions import GraphQLValidationError
 
 
 def rename_query(ast, renamings):
@@ -26,7 +26,7 @@ def rename_query(ast, renamings):
         Document, a new AST representing the renamed query
 
     Raises:
-        - QueryStrutureError if the ast does not have the expected form; in particular, if the
+        - GraphQLValidationError if the ast does not have the expected form; in particular, if the
           AST contains Fragments, or if it contains an InlineFragment at the root level
     """
     # NOTE: There is a validation section in graphql-core that takes in a schema and a
@@ -34,7 +34,7 @@ def rename_query(ast, renamings):
     # the schema, all leaf nodes are scalars, arguments are of the correct type, etc.
     # We assume this validation step has been done.
     if len(ast.definitions) > 1:  # includes either multiple queries, or fragment definitions
-        raise QueryStructureError(
+        raise GraphQLValidationError (
             u'Only one query may be included, and fragments are not allowed.'
         )
 
@@ -42,7 +42,7 @@ def rename_query(ast, renamings):
 
     for selection in query_definition.selection_set.selections:
         if not isinstance(selection, ast_types.Field):  # possibly an InlineFragment
-            raise QueryStructureError(
+            raise GraphQLValidationError (
                 u'Each root selections must be of type "Field", not "{}" as in '
                 u'selection "{}"'.format(type(selection).__name__, selection)
             )
