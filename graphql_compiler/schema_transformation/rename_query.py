@@ -10,15 +10,16 @@ from ..exceptions import GraphQLValidationError
 def rename_query(ast, renamings):
     """Translate names of types and root vertex fields using renamings.
 
-    Besides root vertex fields (fields of the query type), no fields will not be renamed.
+    Besides root vertex fields (fields of the query type), no field will be renamed.
 
-    This function is intended to be used in conjunction with rename_schema. One may rename
-    a schema (perhaps to resolve name conflicts when merging schemas) while the underlying
-    database continues to operate on the original schema. Then, any query written in terms
-    of the renamed schema must be transformed back use original names in the original schema,
-    before being run against the database.
-    The attribute 'reverse_name_map' of a RenamedSchemaDescriptor may be used as input to
-    renamings for this purpose.
+    This function is intended to be used in conjunction with rename_schema. In order to
+    resolve name conflicts when merging schemas, one may rename certain schema types.
+    However, queries against the underlying database will only work if compiled with
+    the original schema of the database. Therefore, in order to be able run queries
+    against the original schema, one may use this function to revert the name of types in
+    the queries back to their original names. 
+    The attribute 'reverse_name_map' of a RenamedSchemaDescriptor may be used as the input
+    'renamings' for this purpose.
 
     Args:
         ast: Document, representing a valid query. It is assumed to have passed GraphQL's
@@ -32,8 +33,8 @@ def rename_query(ast, renamings):
         Document, a new AST representing the renamed query
 
     Raises:
-        - GraphQLValidationError if the ast does not have the expected form; in particular, if the
-          AST contains Fragments, or if it contains an InlineFragment at the root level
+        - GraphQLValidationError if the ast does not have the expected form; in particular,
+          if the AST contains Fragments, or if it contains an InlineFragment at the root level
     """
     # NOTE: There is a validation section in graphql-core that takes in a schema and a
     # query ast, and checks whether the query is valid -- for example, type names are known in
