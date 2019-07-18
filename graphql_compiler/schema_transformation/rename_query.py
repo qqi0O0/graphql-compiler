@@ -17,7 +17,7 @@ def rename_query(ast, renamings):
     However, queries against the underlying database will only work if compiled with
     the original schema of the database. Therefore, in order to be able run queries
     against the original schema, one may use this function to revert the name of types in
-    the queries back to their original names. 
+    the queries back to their original names.
     The attribute 'reverse_name_map' of a RenamedSchemaDescriptor may be used as the input
     'renamings' for this purpose.
 
