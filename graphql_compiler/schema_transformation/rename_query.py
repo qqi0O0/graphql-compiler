@@ -41,8 +41,8 @@ def rename_query(ast, renamings):
     for selection in query_definition.selection_set.selections:
         if not isinstance(selection, ast_types.Field):  # possibly an InlineFragment
             raise QueryStructureError(
-                u'Each root selections must be of type "Field", '
-                u'not "{}"'.format(type(selection).__name__)
+                u'Each root selections must be of type "Field", not "{}" as in '
+                u'selection "{}"'.format(type(selection).__name__, selection)
             )
 
     ast = deepcopy(ast)
@@ -65,9 +65,7 @@ class RenameQueryVisitor(Visitor):
         self.selection_set_level = 0
 
     def _rename_name(self, node):
-        """Rename the value of the node as according to renamings.
-
-        Modifies node.
+        """Modify node as according to renamings.
 
         Args:
             node: type Name, an AST Node object that describes the name of its parent node in
@@ -95,8 +93,8 @@ class RenameQueryVisitor(Visitor):
         # For a Field to be a field of the query type, it needs to be the first level of
         # selections (fields in more nested selections are normal fields that should not be
         # modified)
-        # As a query may not start with an inline fragment, and FragmentDefinition is not allowed,
-        # an element in the first level of selection set in a definition must be a field of
-        # the query type
+        # As FragmentDefinition is not allowed, the parent of the selection must be a query
+        # As a query may not start with an inline fragment, all first level selections are
+        # fields
         if self.selection_set_level == 1:
             self._rename_name(node.name)
