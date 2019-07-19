@@ -46,7 +46,7 @@ def check_schema_identifier_is_valid(identifier):
     """Check if input is a valid identifier, made of alphanumeric and underscore characters.
 
     Args:
-        identifier: str
+        identifier: str, used for identifying input schemas when merging multiple schemas
 
     Raises:
         - ValueError if the name is the empty string, or if it consists of characters other
