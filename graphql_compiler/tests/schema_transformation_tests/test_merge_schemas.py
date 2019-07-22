@@ -6,7 +6,9 @@ import unittest
 from graphql import parse
 from graphql.language.printer import print_ast
 
-from graphql_compiler.schema_transformation.merge_schemas import merge_schemas
+from graphql_compiler.schema_transformation.merge_schemas import (
+    merge_schemas, CrossSchemaEdgeDescriptor, FieldReference
+)
 from graphql_compiler.schema_transformation.utils import SchemaNameConflictError
 
 from .input_schema_strings import InputSchemaStrings as ISS
@@ -476,3 +478,71 @@ class TestMergeSchemas(unittest.TestCase):
             merge_schemas(OrderedDict([
                 ('\t\b', parse(ISS.basic_schema)),
             ]))
+
+    def test_simple_cross_edge_descriptor(self):
+        additional_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              identifier: String
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.basic_schema)),
+                ('second', parse(additional_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'id',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Person',
+                        field_name = 'identifier',
+                    ),
+                )
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Person: Person
+            }
+
+            type Human {
+              id: String
+              out_example_edge: [Person] @stitch(source_field: "id", sink_field: "identifier")
+            }
+
+            type Person {
+              identifier: String
+              in_example_edge: [Human] @stitch(source_field: "identifier", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+    # TODO:
+    # original ast unmodified when edge added
+    # edge lies within one schema
+    # edge end refers to nonexistent schema
+    # edge end refers to a type in the wrong schema
+    # edge end refers to a nonexistent type
+    # edge end refers to a scalar
+    # edge end refers to an enum
+    # edge end refers to a nonexistent field in the type
+    # field created by edge clashes with existing edge
