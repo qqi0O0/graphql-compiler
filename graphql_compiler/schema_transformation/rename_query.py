@@ -14,7 +14,7 @@ def rename_query(ast, renamings):
 
     Args:
         ast: Document, representing a valid query. It is assumed to have passed GraphQL's
-             builtin validation -- validate(schema, ast) in graphql/validation/validation.py
+             builtin validation -- validate(schema, ast) in graphql/validation/validation.py --
              in that it has the structure of a valid query, does not reference non-existent
              types or fields, and passes type checks. The ast is not modified by this function
         renamings: Dict[str, str], mapping original type/root vertex field names to renamed
