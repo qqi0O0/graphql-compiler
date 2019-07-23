@@ -8,8 +8,8 @@ from graphql.language.printer import print_ast
 import six
 
 from .utils import (
-    SchemaNameConflictError, check_ast_schema_is_valid, check_schema_identifier_is_valid,
-    get_query_type_name
+    SchemaNameConflictError, InvalidCrossSchemaEdgeError, check_ast_schema_is_valid,
+    check_schema_identifier_is_valid, get_query_type_name
 )
 
 
@@ -51,9 +51,9 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges):
     fields of the query types of each input schema.
 
     Args:
-        schema_id_to_ast: OrderedDict[str, Document], where keys are names/identifiers of schemas,
-                          and values are ASTs describing schemas. The ASTs will not be modified
-                          by this funcion
+        schema_id_to_ast: OrderedDict[str, Document], where keys are names/identifiers of
+                          schemas, and values are ASTs describing schemas. The ASTs will not
+                          be modified by this funcion
         cross_schema_edges: List[CrossSchemaEdgeDescriptor], containing all edges connecting
                             fields in multiple schemas to be added to the merged schema
 
@@ -89,7 +89,8 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges):
         _merge_single_schema(merged_schema_ast, name_to_schema_id, scalars, directives,
                              current_schema_id, current_ast)
 
-    _merge_cross_schema_edges(merged_schema_ast, name_to_schema_id, cross_schema_edges, query_type)
+    _merge_cross_schema_edges(merged_schema_ast, name_to_schema_id, cross_schema_edges,
+                              query_type)
 
     return MergedSchemaDescriptor(
         schema_ast=merged_schema_ast,
@@ -272,8 +273,8 @@ def _process_scalar_definition(scalar, existing_scalars, name_to_schema_id, merg
     existing_scalars.add(scalar_name)
 
 
-def _process_generic_type_definition(generic_type, schema_id, existing_scalars, name_to_schema_id,
-                                     merged_schema_ast):
+def _process_generic_type_definition(generic_type, schema_id, existing_scalars,
+                                     name_to_schema_id, merged_schema_ast):
     """Compare new type against existing scalars and types, update records and schema.
 
     Args:
@@ -347,7 +348,7 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges,
         inbound_side = cross_schema_edge.inbound_side
 
         if outbound_side.schema_id == inbound_side.schema_id:
-            raise Exception(
+            raise InvalidCrossSchemaEdgeError(
                 u'Edge "{}" does not cross schemas.'.format(cross_schema_edge)
             )
         _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
@@ -382,16 +383,16 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
     type_name = field_reference.type_name
     field_name = field_reference.field_name
 
-    # Error if type is nonexistent (includes if type is an enum or scalar)
+    # Error if the type is nonexistent (includes if type is an enum or scalar)
     if type_name not in type_name_to_definition:
-        raise Exception(
+        raise InvalidCrossSchemaEdgeError(
             u'Type "{}" specified in the field of edge "{}" is not found '
             u'in the merged schema.'.format(type_name, cross_schema_edge)
         )
 
-    # Error if type is in a wrong or nonexistent schema
+    # Error if the type is in a wrong or nonexistent schema
     if name_to_schema_id[type_name] != schema_id:
-        raise Exception(
+        raise InvalidCrossSchemaEdgeError(
             u'Type "{}" specified in the field of edge "{}" is expected to be in '
             u'schema "{}", but is instead bound in schema "{}"'.format(
                 type_name, cross_schema_edge, schema_id,
@@ -399,11 +400,11 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
             )
         )
 
-    # Error if type doesn't have the expected field
+    # Error if the type doesn't have the expected field
     type_definition = type_name_to_definition[type_name]
     type_fields = type_definition.fields
     if not any(field.name.value==field_name for field in type_fields):
-        raise Exception(
+        raise InvalidCrossSchemaEdgeError(
             u'Field "{}" is not found under type "{}" in schema "{}", as expected by the '
             u'field of edge "{}".'.format(
                 field_name, type_name, schema_id, cross_schema_edge
@@ -430,7 +431,7 @@ def _add_edge_field(source_type_node, sink_type_node, source_field_name, sink_fi
 
     # Error if new edge causes a field name clash
     if any(field.name.value==new_edge_field_name for field in type_fields):
-        raise Exception(
+        raise SchemaNameConflictError(
             u'New field "{}" under type "{}" created by the {}bound field "{}" '
             u'of edge named "{}" clashes with an existing field of the same name.'.format(
                 new_edge_field_name, type_name, direction, field_reference, edge_name

@@ -616,6 +616,8 @@ class TestMergeSchemas(unittest.TestCase):
     # edge end refers to a scalar
     # edge end refers to an enum
     # edge end refers to a nonexistent field in the type
-    # field created by edge clashes with existing edge
+    # field created by edge clashes with existing field
+    # two edges clash in name
+    # one directional edge
     # TODO: 
     # add extra commas
