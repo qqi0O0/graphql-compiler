@@ -347,14 +347,18 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges,
         outbound_side = cross_schema_edge.outbound_side
         inbound_side = cross_schema_edge.inbound_side
 
-        if outbound_side.schema_id == inbound_side.schema_id:
+        if outbound_side.schema_id == inbound_side.schema_id:  # not cross schema
             raise InvalidCrossSchemaEdgeError(
                 u'Edge "{}" does not cross schemas.'.format(cross_schema_edge)
             )
+
         _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
                                         cross_schema_edge.outbound_side)
         _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
                                         cross_schema_edge.inbound_side)
+
+        # TODO: source and sink field types mismatch raises error
+        # TODO: field must refer to scalar or NonNull around scalar
 
         outbound_side_node = type_name_to_definition[outbound_side.type_name]
         inbound_side_node = type_name_to_definition[inbound_side.type_name]
@@ -384,18 +388,19 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
     field_name = field_reference.field_name
 
     # Error if the type is nonexistent (includes if type is an enum or scalar)
+    # Consider improving error message if type is an enum or scalar
     if type_name not in type_name_to_definition:
         raise InvalidCrossSchemaEdgeError(
-            u'Type "{}" specified in the field of edge "{}" is not found '
-            u'in the merged schema.'.format(type_name, cross_schema_edge)
+            u'Type "{}" specified in the field reference "{}" is not found '
+            u'in the merged schema.'.format(type_name, field_reference)
         )
 
     # Error if the type is in a wrong or nonexistent schema
     if name_to_schema_id[type_name] != schema_id:
         raise InvalidCrossSchemaEdgeError(
-            u'Type "{}" specified in the field of edge "{}" is expected to be in '
+            u'Type "{}" specified in the field reference "{}" is expected to be in '
             u'schema "{}", but is instead bound in schema "{}"'.format(
-                type_name, cross_schema_edge, schema_id,
+                type_name, field_reference, schema_id,
                 name_to_schema_id[type_name]
             )
         )
@@ -406,8 +411,8 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
     if not any(field.name.value==field_name for field in type_fields):
         raise InvalidCrossSchemaEdgeError(
             u'Field "{}" is not found under type "{}" in schema "{}", as expected by the '
-            u'field of edge "{}".'.format(
-                field_name, type_name, schema_id, cross_schema_edge
+            u'field reference "{}".'.format(
+                field_name, type_name, schema_id, field_reference
             )
         )
 
@@ -419,8 +424,8 @@ def _add_edge_field(source_type_node, sink_type_node, source_field_name, sink_fi
     Args:
         source_type_node: (Interface/Object/Union)TypeDefinition; modified by this function
         sink_type_node: (Interface/Object/Union)TypeDefinition
-        source_field_reference: FieldReference
-        sink_field_reference: FieldReference
+        source_field_name: str
+        sink_field_name: str
         edge_name: str
         direction: str, either 'in' or 'out'
     """
@@ -432,9 +437,9 @@ def _add_edge_field(source_type_node, sink_type_node, source_field_name, sink_fi
     # Error if new edge causes a field name clash
     if any(field.name.value==new_edge_field_name for field in type_fields):
         raise SchemaNameConflictError(
-            u'New field "{}" under type "{}" created by the {}bound field "{}" '
-            u'of edge named "{}" clashes with an existing field of the same name.'.format(
-                new_edge_field_name, type_name, direction, field_reference, edge_name
+            u'New field "{}" under type "{}" created by the {}bound field of edge named '
+            u'"{}" clashes with an existing field of the same name.'.format(
+                new_edge_field_name, source_type_node.name.value, direction, edge_name
             )
         )
 
