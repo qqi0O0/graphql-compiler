@@ -43,7 +43,7 @@ FieldReference = namedtuple(
 )
 
 
-def merge_schemas(schema_id_to_ast, cross_schema_edges=()):  # TODO: remove default later
+def merge_schemas(schema_id_to_ast, cross_schema_edges):
     """Merge all input schemas and add all cross schema edges.
 
     The merged schema will contain all type, interface, union, enum, scalar, and directive
