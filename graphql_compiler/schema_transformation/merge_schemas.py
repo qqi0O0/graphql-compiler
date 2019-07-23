@@ -71,8 +71,11 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges):
           same name as the type that it queries, if the schema contains type extensions or
           input object definitions, or if the schema contains mutations or subscriptions
         - SchemaNameConflictError if there are conflicts between the names of
-          types/interfaces/enums/scalars, or conflicts between the definition of directives
-          with the same name
+          types/interfaces/enums/scalars or fields, or conflicts between the definition of
+          directives with the same name
+        - InvalidCrossSchemaEdgeError if some cross schema edge provided lies within one schema,
+          refers nonexistent schemas, types, fields, or connects non-scalar or non-matching
+          fields
     """
     if len(schema_id_to_ast) == 0:
         raise ValueError(u'Expected a nonzero number of schemas to merge.')
@@ -309,7 +312,10 @@ def _process_generic_type_definition(generic_type, schema_id, existing_scalars,
 
 def _merge_cross_schema_edges(schema_ast, name_to_schema_id, scalars, cross_schema_edges,
                               query_type):
-    """Add cross schema edges into the schema ast.
+    """Add cross schema edges into the schema AST.
+
+    Each cross schema edge will be incorporated into the schema by adding additional fields
+    with a @stitch directive to relevant fields.
 
     Args:
         scheam_ast: Document; modified by this function
@@ -321,12 +327,11 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, scalars, cross_sche
         query_type: str, name of the query type in the merged schema
 
     Raises:
-        some error if:
-            an edge's field references a nonexistent schema id
-            an edge's outbound and inbound ends are in the same schema
-            an edge's field references a nonexistent type in the id
-            the edge name is taken (field clashes)
-            outbound or inbound field doesn't exist
+        - SchemaNameConflictError if some cross schema edge name causes a name conflict with
+          fields
+        - InvalidCrossSchemaEdgeError if some cross schema edge lies within one schema, refers
+          nonexistent schemas, types, fields, stitches together fields that are not of a
+          scalar type, or stitched together fields that are of different scalar types
     """
     # Build map of definitions for ease of modification
     type_name_to_definition = {}  # Dict[str, (Interface/Object/Union)TypeDefinition]
@@ -364,7 +369,20 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, scalars, cross_sche
 
 def _check_cross_schema_edge_is_valid(type_name_to_definition, name_to_schema_id, scalars,
                                       cross_schema_edge):
-    """
+    """Check that the edge crosses schemas and has valid field references of correct types.
+
+    Args:
+        type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition], mapping
+                                 name of types to their definitions
+        name_to_schema_id: Dict[str, str], mapping type name to id of the schema that the
+                           type is from
+        scalars: Set[str], names of all scalars in the merged_schema so far
+        cross_schema_edge: CrossSchemaEdge, the edge that we check the validity of
+
+    Raises:
+        - InvalidCrossSchemaEdgeError if some cross schema edge lies within one schema, refers
+          nonexistent schemas, types, fields, stitches together fields that are not of a
+          scalar type, or stitched together fields that are of different scalar types
     """
     outbound_side = cross_schema_edge.outbound_side
     inbound_side = cross_schema_edge.inbound_side
@@ -387,16 +405,22 @@ def _check_field_reference_is_valid(type_name_to_definition, name_to_schema_id, 
     schema, and that the type contains the field of the expected name.
 
     Args:
-        type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition]
-        name_to_schema_id: Dict[str, str]
-        field_reference: FieldReference
+        type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition], mapping
+                                 name of types to their definitions
+        name_to_schema_id: Dict[str, str], mapping type name to id of the schema that the
+                           type is from
+        field_reference: FieldReference, what we check the validity of
+
+    Raises:
+        - InvalidCrossSchemaEdgeError if the field reference refers nonexistent schemas,
+          types, or fields
     """
     schema_id = field_reference.schema_id
     type_name = field_reference.type_name
     field_name = field_reference.field_name
 
     # Error if the type is nonexistent (includes if type is an enum or scalar)
-    # Consider improving error message if type is an enum or scalar
+    # TODO: Consider improving error message if type is an enum or scalar
     if type_name not in type_name_to_definition:
         raise InvalidCrossSchemaEdgeError(
             u'Type "{}" specified in the field reference "{}" is not found '
@@ -431,9 +455,14 @@ def _check_field_types_are_matching_scalars(type_name_to_definition, scalars, cr
     It is also legal for fields to be of a NonNull wrapped scalar type.
 
     Args:
-        type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition]
-        scalars: Set[str]
-        cross_schema_edge: CrossSchemaEdge
+        type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition], mapping
+                                 name of types to their definitions
+        scalars: Set[str], names of all scalars in the merged_schema so far
+        cross_schema_edge: CrossSchemaEdge, the edge that we check the validity of
+
+    Raises:
+        - InvalidCrossSchemaEdgeError if the cross schema edge stitches together fields that are
+          not of a scalar type, or stitched together fields that are of different scalar types
     """
     field_type_names = []
 
@@ -445,12 +474,16 @@ def _check_field_types_are_matching_scalars(type_name_to_definition, scalars, cr
         field_name = field_reference.field_name
 
         fields = type_name_to_definition[type_name].fields  # List[FieldDefinition]
+        field_type = None
         for field in fields:
             if field.name.value == field_name:
                 field_type = field.type
                 while isinstance(field_type, ast_types.NonNullType):  # strip NonNull
                     field_type = field_type.type
             break
+
+        if field_type is None:  # should never happen after _check_field_reference_is_valid
+            raise AssertionError(u'Field "{}" unexpectedly not found.'.format(field_name))
 
         if isinstance(field_type, ast_types.ListType):
             raise InvalidCrossSchemaEdgeError(
@@ -488,12 +521,18 @@ def _add_edge_field(source_type_node, sink_type_node, source_field_name, sink_fi
     """Add one direction of the specified edge as a field of the source type.
 
     Args:
-        source_type_node: (Interface/Object/Union)TypeDefinition; modified by this function
-        sink_type_node: (Interface/Object/Union)TypeDefinition
-        source_field_name: str
-        sink_field_name: str
-        edge_name: str
+        source_type_node: (Interface/Object/Union)TypeDefinition, where a new field representing
+                          one direction of the edge will be added; modified by this function
+        sink_type_node: (Interface/Object/Union)TypeDefinition, representing the other end of
+                        the edge
+        source_field_name: str, name of the source side field that will be stitched
+        sink_field_name: str, name of the sink side field that will be stitched
+        edge_name: str, name of the edge that will be used to name the new field
         direction: str, either 'in' or 'out'
+
+    Raises:
+        - SchemaNameConflictError if the new edge name causes a name conflict with existing
+          fields
     """
     type_fields = source_type_node.fields
     new_edge_field_name = direction + '_' + edge_name
