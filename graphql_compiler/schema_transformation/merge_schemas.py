@@ -89,7 +89,7 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges):
         _merge_single_schema(merged_schema_ast, name_to_schema_id, scalars, directives,
                              current_schema_id, current_ast)
 
-    _merge_cross_schema_edges(merged_schema_ast, name_to_schema_id, cross_schema_edges,
+    _merge_cross_schema_edges(merged_schema_ast, name_to_schema_id, scalars, cross_schema_edges,
                               query_type)
 
     return MergedSchemaDescriptor(
@@ -307,13 +307,15 @@ def _process_generic_type_definition(generic_type, schema_id, existing_scalars,
     name_to_schema_id[type_name] = schema_id
 
 
-def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges, query_type):
+def _merge_cross_schema_edges(schema_ast, name_to_schema_id, scalars, cross_schema_edges,
+                              query_type):
     """Add cross schema edges into the schema ast.
 
     Args:
         scheam_ast: Document; modified by this function
         name_to_schema_id: Dict[str, str], mapping type name to id of the schema that the
-                           type is from; modified by this function
+                           type is from
+        scalars: Set[str], names of all scalars in the merged_schema so far
         cross_schema_edges: List[CrossSchemaEdgeDescriptor], containing all edges connecting
                             fields in multiple schemas to be added to the merged schema
         query_type: str, name of the query type in the merged schema
@@ -343,22 +345,12 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges,
 
     # Iterate through edges list, incorporate each edge on one or both sides
     for cross_schema_edge in cross_schema_edges:
+        _check_cross_schema_edge_is_valid(type_name_to_definition, name_to_schema_id, scalars,
+                                          cross_schema_edge)
+
         edge_name = cross_schema_edge.edge_name
         outbound_side = cross_schema_edge.outbound_side
         inbound_side = cross_schema_edge.inbound_side
-
-        if outbound_side.schema_id == inbound_side.schema_id:  # not cross schema
-            raise InvalidCrossSchemaEdgeError(
-                u'Edge "{}" does not cross schemas.'.format(cross_schema_edge)
-            )
-
-        _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
-                                        cross_schema_edge.outbound_side)
-        _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
-                                        cross_schema_edge.inbound_side)
-
-        # TODO: source and sink field types mismatch raises error
-        # TODO: field must refer to scalar or NonNull around scalar
 
         outbound_side_node = type_name_to_definition[outbound_side.type_name]
         inbound_side_node = type_name_to_definition[inbound_side.type_name]
@@ -370,15 +362,31 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges,
                             outbound_side.field_name, edge_name, 'in')
 
 
-def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
-                                    field_reference):
-    """Check that the field reference is valid.
+def _check_cross_schema_edge_is_valid(type_name_to_definition, name_to_schema_id, scalars,
+                                      cross_schema_edge):
+    """
+    """
+    outbound_side = cross_schema_edge.outbound_side
+    inbound_side = cross_schema_edge.inbound_side
 
-    In particular, check that the field reference is on an existent type in the correct
+    _check_field_reference_is_valid(type_name_to_definition, name_to_schema_id, outbound_side)
+    _check_field_reference_is_valid(type_name_to_definition, name_to_schema_id, inbound_side)
+
+    if outbound_side.schema_id == inbound_side.schema_id:  # not cross schema
+        raise InvalidCrossSchemaEdgeError(
+            u'Edge "{}" does not cross schemas.'.format(cross_schema_edge)
+        )
+
+    _check_field_types_are_matching_scalars(type_name_to_definition, scalars, cross_schema_edge)
+
+
+def _check_field_reference_is_valid(type_name_to_definition, name_to_schema_id, field_reference):
+    """Check that the field reference refers to a valid field.
+
+    In particular, check that the field reference is on a type that exists in the correct
     schema, and that the type contains the field of the expected name.
 
     Args:
-        schema_ast: Document
         type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition]
         name_to_schema_id: Dict[str, str]
         field_reference: FieldReference
@@ -413,6 +421,64 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
             u'Field "{}" is not found under type "{}" in schema "{}", as expected by the '
             u'field reference "{}".'.format(
                 field_name, type_name, schema_id, field_reference
+            )
+        )
+
+
+def _check_field_types_are_matching_scalars(type_name_to_definition, scalars, cross_schema_edge):
+    """Check that stitched fields in a cross schema edge are of the same scalar type.
+
+    It is also legal for fields to be of a NonNull wrapped scalar type.
+
+    Args:
+        type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition]
+        scalars: Set[str]
+        cross_schema_edge: CrossSchemaEdge
+    """
+    field_type_names = []
+
+    for direction, field_reference in (
+        ('out', cross_schema_edge.outbound_side),
+        ('in', cross_schema_edge.inbound_side),
+    ):
+        type_name = field_reference.type_name
+        field_name = field_reference.field_name
+
+        fields = type_name_to_definition[type_name].fields  # List[FieldDefinition]
+        for field in fields:
+            if field.name.value == field_name:
+                field_type = field.type
+                while isinstance(field_type, ast_types.NonNullType):  # strip NonNull
+                    field_type = field_type.type
+            break
+
+        if isinstance(field_type, ast_types.ListType):
+            raise InvalidCrossSchemaEdgeError(
+                u'The {}bound field of cross schema edge "{}" gives a list, while it '
+                u'should be a single scalar'.format(
+                    direction, cross_schema_edge
+                )
+            )
+        elif isinstance(field_type, ast_types.NamedType):
+            if field_type.name.value not in scalars:
+                raise InvalidCrossSchemaEdgeError(
+                    u'The {}bound field of cross schema edge "{}" is of type "{}", which '
+                    u'is not a scalar'.format(
+                        direction, cross_schema_edge, field_type.name.value
+                    )
+                )
+        else:  # since NonNull is stripped, field_type can only be ListType or NamedType
+            raise AssertionError(
+                u'Field has missed type "{}"'.format(type(field_type).__name__)
+            )
+
+        field_type_names.append(field_type.name.value)
+
+    if field_type_names[0] != field_type_names[1]:  # fields return different scalars
+        raise InvalidCrossSchemaEdgeError(
+            u'The outbound and inbound fields of edge "{}" are of different types, '
+            u'"{}" and "{}"; they are expected to be of the same scalar type.'.format(
+                cross_schema_edge, field_type_names[0], field_type_names[1]
             )
         )
 
