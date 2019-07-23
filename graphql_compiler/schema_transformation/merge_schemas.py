@@ -1,5 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
+from copy import deepcopy
 
 from graphql import build_ast_schema
 from graphql.language import ast as ast_types
@@ -49,8 +50,6 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges=()):  # TODO: remove defa
     definitions from input schemas. The fields of its query type will be the union of the
     fields of the query types of each input schema.
 
-    Note that the output AST will share mutable objects with input ASTs.
-
     Args:
         schema_id_to_ast: OrderedDict[str, Document], where keys are names/identifiers of schemas,
                           and values are ASTs describing schemas. The ASTs will not be modified
@@ -86,6 +85,7 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges=()):  # TODO: remove defa
     directives = {}  # Dict[str, DirectiveDefinition]
 
     for current_schema_id, current_ast in six.iteritems(schema_id_to_ast):
+        current_ast = deepcopy(current_ast)
         _merge_single_schema(merged_schema_ast, name_to_schema_id, scalars, directives,
                              current_schema_id, current_ast)
 
@@ -327,7 +327,7 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges,
     """
     # Build map of definitions for ease of modification
     type_name_to_definition = {}  # Dict[str, (Interface/Object/Union)TypeDefinition]
-    for definition in schema_ast:
+    for definition in schema_ast.definitions:
         if (
             isinstance(definition, ast_types.ObjectTypeDefinition) and
             definition.name.value == query_type
@@ -351,21 +351,23 @@ def _merge_cross_schema_edges(schema_ast, name_to_schema_id, cross_schema_edges,
                 u'Edge "{}" does not cross schemas.'.format(cross_schema_edge)
             )
         _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
-                                        cross_schema_edge, 'out')
+                                        cross_schema_edge.outbound_side)
         _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
-                                        cross_schema_edge, 'in')
+                                        cross_schema_edge.inbound_side)
 
-        # NOTE: some type definitions will be modified, copy what is necessary
         outbound_side_node = type_name_to_definition[outbound_side.type_name]
-        _add_edge_field(outbound_side_node, edge_name, outbound_side, 'out')
+        inbound_side_node = type_name_to_definition[inbound_side.type_name]
+
+        _add_edge_field(outbound_side_node, inbound_side_node, outbound_side.field_name,
+                        inbound_side.field_name, edge_name, 'out')
         if not cross_schema_edge.out_edge_only:
-            _add_edge_field(schema_ast, type_name_to_definition, name_to_schema_id, edge_name,
-                            inbound_side, 'in')
+            _add_edge_field(inbound_side_node, outbound_side_node, inbound_side.field_name,
+                            outbound_side.field_name, edge_name, 'in')
 
 
 def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to_schema_id,
-                                    cross_schema_edge, direction):
-    """Check that the field reference on one end of the edge is valid.
+                                    field_reference):
+    """Check that the field reference is valid.
 
     In particular, check that the field reference is on an existent type in the correct
     schema, and that the type contains the field of the expected name.
@@ -374,16 +376,8 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
         schema_ast: Document
         type_name_to_definition: Dict[str, (Interface/Object/Union)TypeDefinition]
         name_to_schema_id: Dict[str, str]
-        cross_schema_edge: CrossSchemaEdge
-        direction: str, either 'in' or 'out'
+        field_reference: FieldReference
     """
-    if direction == 'out':
-        field_reference = cross_schema_edge.outbound_side
-    elif direction == 'in':
-        field_reference = cross_schema_edge.inbound_side
-    else:
-        raise AssertionError(u'"{}" is not a valid input for direction.'.format(direction))
-
     schema_id = field_reference.schema_id
     type_name = field_reference.type_name
     field_name = field_reference.field_name
@@ -391,16 +385,16 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
     # Error if type is nonexistent (includes if type is an enum or scalar)
     if type_name not in type_name_to_definition:
         raise Exception(
-            u'Type "{}" specified in the {}bound field of edge "{}" is not found '
-            u'in the merged schema.'.format(type_name, direction, cross_schema_edge)
+            u'Type "{}" specified in the field of edge "{}" is not found '
+            u'in the merged schema.'.format(type_name, cross_schema_edge)
         )
 
     # Error if type is in a wrong or nonexistent schema
     if name_to_schema_id[type_name] != schema_id:
         raise Exception(
-            u'Type "{}" specified in the {}bound field of edge "{}" is expected to be in '
+            u'Type "{}" specified in the field of edge "{}" is expected to be in '
             u'schema "{}", but is instead bound in schema "{}"'.format(
-                type_name, direction, cross_schema_edge, schema_id,
+                type_name, cross_schema_edge, schema_id,
                 name_to_schema_id[type_name]
             )
         )
@@ -411,25 +405,28 @@ def _check_field_reference_is_valid(schema_ast, type_name_to_definition, name_to
     if not any(field.name.value==field_name for field in type_fields):
         raise Exception(
             u'Field "{}" is not found under type "{}" in schema "{}", as expected by the '
-            u'{}bound field of edge "{}".'.format(
-                field_name, type_name, schema_id, direction, cross_schema_edge
+            u'field of edge "{}".'.format(
+                field_name, type_name, schema_id, cross_schema_edge
             )
         )
 
 
-def _add_edge_field(type_node, edge_name, field_reference, direction):
-    """Add one direction of the specified edge as a field of the correct type.
+def _add_edge_field(source_type_node, sink_type_node, source_field_name, sink_field_name,
+                    edge_name, direction):
+    """Add one direction of the specified edge as a field of the source type.
 
     Args:
-        schema_ast: Document
-        name_to_schema_id: Dict[str, str]
+        source_type_node: (Interface/Object/Union)TypeDefinition; modified by this function
+        sink_type_node: (Interface/Object/Union)TypeDefinition
+        source_field_reference: FieldReference
+        sink_field_reference: FieldReference
         edge_name: str
-        field_reference: FieldReference
         direction: str, either 'in' or 'out'
     """
-    type_name = type_fields.name.value
-    type_fields = type_node.fields
+    type_fields = source_type_node.fields
     new_edge_field_name = direction + '_' + edge_name
+
+    sink_type_name = sink_type_node.name.value
 
     # Error if new edge causes a field name clash
     if any(field.name.value==new_edge_field_name for field in type_fields):
@@ -441,5 +438,33 @@ def _add_edge_field(type_node, edge_name, field_reference, direction):
         )
 
     new_edge_field_node = ast_types.FieldDefinition(
-        # TODO
+        name=ast_types.Name(value=new_edge_field_name),
+        arguments=[],
+        type=ast_types.ListType(
+            type=ast_types.NamedType(
+                name=ast_types.Name(value=sink_type_name),
+            ),
+        ),
+        directives=[
+            _build_stitch_directive(source_field_name, sink_field_name),
+        ],
+    )
+
+    type_fields.append(new_edge_field_node)
+
+
+def _build_stitch_directive(source_field_name, sink_field_name):
+    """Build a Directive node for the stitch directive."""
+    return ast_types.Directive(
+        name=ast_types.Name(value='stitch'),
+        arguments=[
+            ast_types.Argument(
+                name=ast_types.Name(value='source_field'),
+                value=ast_types.StringValue(value=source_field_name),
+            ),
+            ast_types.Argument(
+                name=ast_types.Name(value='sink_field'),
+                value=ast_types.StringValue(value=sink_field_name),
+            ),
+        ],
     )

@@ -49,7 +49,7 @@ class TestMergeSchemas(unittest.TestCase):
         self.assertEqual({'Droid': 'enum', 'Height': 'enum', 'Human': 'basic'},
                          merged_schema.name_to_schema_id)
 
-    def test_originals_unmodified(self):
+    def test_original_unmodified(self):
         basic_ast = parse(ISS.basic_schema)
         enum_ast = parse(ISS.enum_schema)
         merge_schemas(
@@ -511,7 +511,7 @@ class TestMergeSchemas(unittest.TestCase):
                         type_name = 'Person',
                         field_name = 'identifier',
                     ),
-                )
+                ),
             ]
         )
         merged_schema_string = dedent('''\
@@ -536,6 +536,45 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
+    def test_original_unmodified_when_edges_added(self):
+        additional_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              identifier: String
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        basic_schema_ast = parse(ISS.basic_schema)
+        additional_schema_ast = parse(additional_schema)
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', basic_schema_ast),
+                ('second', additional_schema_ast),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'id',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Person',
+                        field_name = 'identifier',
+                    ),
+                ),
+            ]
+        )
+        self.assertEqual(ISS.basic_schema, print_ast(basic_schema_ast))
+        self.assertEqual(additional_schema, print_ast(additional_schema_ast))
     # TODO:
     # original ast unmodified when edge added
     # edge lies within one schema
@@ -546,3 +585,5 @@ class TestMergeSchemas(unittest.TestCase):
     # edge end refers to an enum
     # edge end refers to a nonexistent field in the type
     # field created by edge clashes with existing edge
+    # TODO: 
+    # add extra commas
