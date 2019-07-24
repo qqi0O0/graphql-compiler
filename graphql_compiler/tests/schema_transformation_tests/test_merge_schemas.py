@@ -628,6 +628,70 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
+    def test_multiple_fields_cross_schema_edge_descriptor(self):
+        multiple_fields_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              age: Int
+              name: String!
+              identifier: String
+              friends: [Person]
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.basic_schema)),
+                ('second', parse(multiple_fields_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'id',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Person',
+                        field_name = 'identifier',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Person: Person
+            }
+
+            type Human {
+              id: String
+              out_example_edge: [Person] @stitch(source_field: "id", sink_field: "identifier")
+            }
+
+            type Person {
+              age: Int
+              name: String!
+              identifier: String
+              friends: [Person]
+              in_example_edge: [Human] @stitch(source_field: "identifier", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
     def test_invalid_edge_within_single_schema(self):
         with self.assertRaises(InvalidCrossSchemaEdgeError):
             merge_schemas(
