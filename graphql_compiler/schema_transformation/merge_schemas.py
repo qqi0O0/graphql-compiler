@@ -87,11 +87,11 @@ def merge_schemas(schema_id_to_ast, cross_schema_edges):
 
     for current_schema_id, current_ast in six.iteritems(schema_id_to_ast):
         current_ast = deepcopy(current_ast)
-        _merge_single_schema(merged_schema_ast, type_name_to_schema_id, scalars, directives,
-                             current_schema_id, current_ast)
+        _accumulate_types(merged_schema_ast, type_name_to_schema_id, scalars, directives,
+                          current_schema_id, current_ast)
 
-    _merge_cross_schema_edges(merged_schema_ast, type_name_to_schema_id, scalars,
-                              cross_schema_edges, query_type)
+    _add_cross_schema_edges(merged_schema_ast, type_name_to_schema_id, scalars,
+                            cross_schema_edges, query_type)
 
     return MergedSchemaDescriptor(
         schema_ast=merged_schema_ast,
@@ -136,9 +136,9 @@ def _get_basic_schema_ast(query_type):
     return blank_ast
 
 
-def _merge_single_schema(merged_schema_ast, type_name_to_schema_id, scalars, directives,
-                         current_schema_id, current_ast):
-    """Merge current_ast into merged_schema_ast, update all records accordingly.
+def _accumulate_types(merged_schema_ast, type_name_to_schema_id, scalars, directives,
+                      current_schema_id, current_ast):
+    """Add all types and query type fields of current_ast into merged_schema_ast.
 
     Args:
         merged_schema_ast: Document. It is modified by this function as current_ast is
@@ -312,12 +312,12 @@ def _process_generic_type_definition(generic_type, schema_id, existing_scalars,
     type_name_to_schema_id[type_name] = schema_id
 
 
-def _merge_cross_schema_edges(schema_ast, type_name_to_schema_id, scalars, cross_schema_edges,
-                              query_type):
+def _add_cross_schema_edges(schema_ast, type_name_to_schema_id, scalars, cross_schema_edges,
+                            query_type):
     """Add cross schema edges into the schema AST.
 
     Each cross schema edge will be incorporated into the schema by adding additional fields
-    with a @stitch directive to relevant fields.
+    with a @stitch directive to relevant types.
 
     Args:
         scheam_ast: Document. It is modified by this function
