@@ -26,12 +26,9 @@ CrossSchemaEdgeDescriptor = namedtuple(
         'edge_name',  # str, name used for the corresponding in and out fields
         'outbound_side',  # FieldReference for the outbound (source) field
         'inbound_side',  # FieldReference for the inbound (sink) field
-        'out_edge_only',  # bool, defaults to False, whether to not add the in-edge
+        'out_edge_only',  # bool, whether or not the edge is bidirectional
     )
 )
-
-
-CrossSchemaEdgeDescriptor.__new__.__defaults__ = (False,)
 
 
 FieldReference = namedtuple(

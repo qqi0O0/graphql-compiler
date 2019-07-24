@@ -532,6 +532,7 @@ class TestMergeSchemas(unittest.TestCase):
                         type_name = 'Person',
                         field_name = 'identifier',
                     ),
+                    out_edge_only=False,
                 ),
             ]
         )
@@ -578,6 +579,7 @@ class TestMergeSchemas(unittest.TestCase):
                         type_name = 'Person',
                         field_name = 'identifier',
                     ),
+                    out_edge_only=False,
                 ),
             ]
         )
@@ -711,6 +713,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Droid',
                             field_name = 'id',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -735,6 +738,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -759,6 +763,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -783,6 +788,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Droid',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -807,6 +813,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Droid',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -831,6 +838,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Height',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -855,6 +863,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'name',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -893,6 +902,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -917,6 +927,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                     CrossSchemaEdgeDescriptor(
                         edge_name = 'clashing_name',
@@ -930,6 +941,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -967,6 +979,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'friend',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -1004,6 +1017,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'friend',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -1041,6 +1055,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'id',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -1078,6 +1093,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'friend',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -1115,6 +1131,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
@@ -1151,6 +1168,7 @@ class TestMergeSchemas(unittest.TestCase):
                         type_name = 'Person',
                         field_name = 'identifier',
                     ),
+                    out_edge_only=False,
                 ),
             ]
         )
@@ -1209,6 +1227,7 @@ class TestMergeSchemas(unittest.TestCase):
                             type_name = 'Person',
                             field_name = 'identifier',
                         ),
+                        out_edge_only=False,
                     ),
                 ]
             )
