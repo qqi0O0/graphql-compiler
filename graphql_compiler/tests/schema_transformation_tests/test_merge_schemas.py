@@ -1231,3 +1231,13 @@ class TestMergeSchemas(unittest.TestCase):
                     ),
                 ]
             )
+
+    # TODO:
+    # Adding edge to interface and same edge inherited by objects implementing interface
+    # Adding edge whose outbound is interface
+    # Adding edge whose inbound is interface
+    # Adding edge both ends are interface
+    # Error when adding edge to union
+    # Matching non-builtin scalar
+    # Adding edge to type that appears in type_equivalence_hints
+    # combination of interface and unions
