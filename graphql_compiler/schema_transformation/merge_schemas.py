@@ -370,6 +370,9 @@ def _add_cross_schema_edges(schema_ast, type_name_to_schema_id, scalars, cross_s
         )):
             type_name_to_definition[definition.name.value] = definition
 
+    # NOTE: All merge_schemas needs is the dict mapping names to names, not the dict mapping
+    # GraphQLObjects to GraphQLObjects. However, elsewhere in the repo, type_equivalence_hints
+    # is a map of objects to objects, and thus we use that same input for consistency
     equivalent_type_names = {
         object_type.name: union_type.name
         for object_type, union_type in six.iteritems(type_equivalence_hints)
