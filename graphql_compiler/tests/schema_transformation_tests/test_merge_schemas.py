@@ -16,7 +16,7 @@ from graphql_compiler.schema_transformation.utils import (
 from .input_schema_strings import InputSchemaStrings as ISS
 
 
-class TestMergeSchemas(unittest.TestCase):
+class TestMergeSchemasNoCrossSchemaEdges(unittest.TestCase):
     def test_basic_merge(self):
         merged_schema = merge_schemas(
             OrderedDict([
@@ -513,6 +513,8 @@ class TestMergeSchemas(unittest.TestCase):
                 [],
             )
 
+
+class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
     def test_simple_cross_schema_edge_descriptor(self):
         merged_schema = merge_schemas(
             OrderedDict([
@@ -694,6 +696,131 @@ class TestMergeSchemas(unittest.TestCase):
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
+    def test_non_null_scalar_match_normal_scalar(self):
+        non_null_field_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              identifier: String!
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.basic_schema)),
+                ('second', parse(non_null_field_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'id',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Person',
+                        field_name = 'identifier',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Person: Person
+            }
+
+            type Human {
+              id: String
+              out_example_edge: [Person] @stitch(source_field: "id", sink_field: "identifier")
+            }
+
+            type Person {
+              identifier: String!
+              in_example_edge: [Human] @stitch(source_field: "identifier", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+    def test_matching_user_defined_scalar(self):
+        additional_scalar_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              age: Int
+              bday: Date
+            }
+
+            scalar Date
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.scalar_schema)),
+                ('second', parse(additional_scalar_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'birthday',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Person',
+                        field_name = 'bday',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Person: Person
+            }
+
+            type Human {
+              id: String
+              birthday: Date
+              out_example_edge: [Person] @stitch(source_field: "birthday", sink_field: "bday")
+            }
+
+            scalar Date
+
+            type Person {
+              age: Int
+              bday: Date
+              in_example_edge: [Human] @stitch(source_field: "bday", sink_field: "birthday")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+
+class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
     def test_invalid_edge_within_single_schema(self):
         with self.assertRaises(InvalidCrossSchemaEdgeError):
             merge_schemas(
@@ -837,6 +964,31 @@ class TestMergeSchemas(unittest.TestCase):
                             schema_id = 'second',
                             type_name = 'Height',
                             field_name = 'identifier',
+                        ),
+                        out_edge_only=False,
+                    ),
+                ]
+            )
+
+    def test_invalid_edge_union_type(self):
+        with self.assertRaises(InvalidCrossSchemaEdgeError):
+            merge_schemas(
+                OrderedDict([
+                    ('first', parse(ISS.union_schema)),
+                    ('second', parse(ISS.interface_schema)),
+                ]),
+                [
+                    CrossSchemaEdgeDescriptor(
+                        edge_name = 'example_edge',
+                        outbound_side = FieldReference(
+                            schema_id = 'first',
+                            type_name = 'HumanOrDroid',
+                            field_name = 'id',
+                        ),
+                        inbound_side = FieldReference(
+                            schema_id = 'second',
+                            type_name = 'Kid',
+                            field_name = 'id',
                         ),
                         out_edge_only=False,
                     ),
@@ -1136,65 +1288,7 @@ class TestMergeSchemas(unittest.TestCase):
                 ]
             )
 
-    def test_non_null_scalar_match_normal_scalar(self):
-        non_null_field_schema = dedent('''\
-            schema {
-              query: SchemaQuery
-            }
-
-            type Person {
-              identifier: String!
-            }
-
-            type SchemaQuery {
-              Person: Person
-            }
-        ''')
-        merged_schema = merge_schemas(
-            OrderedDict([
-                ('first', parse(ISS.basic_schema)),
-                ('second', parse(non_null_field_schema)),
-            ]),
-            [
-                CrossSchemaEdgeDescriptor(
-                    edge_name = 'example_edge',
-                    outbound_side = FieldReference(
-                        schema_id = 'first',
-                        type_name = 'Human',
-                        field_name = 'id',
-                    ),
-                    inbound_side = FieldReference(
-                        schema_id = 'second',
-                        type_name = 'Person',
-                        field_name = 'identifier',
-                    ),
-                    out_edge_only=False,
-                ),
-            ]
-        )
-        merged_schema_string = dedent('''\
-            schema {
-              query: RootSchemaQuery
-            }
-
-            type RootSchemaQuery {
-              Human: Human
-              Person: Person
-            }
-
-            type Human {
-              id: String
-              out_example_edge: [Person] @stitch(source_field: "id", sink_field: "identifier")
-            }
-
-            type Person {
-              identifier: String!
-              in_example_edge: [Human] @stitch(source_field: "identifier", sink_field: "id")
-            }
-        ''')
-        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
-
-    def test_non_null_scalar_mismatch_normal_scalar(self):
+    def test_invalid_edge_non_null_scalar_mismatch_normal_scalar(self):
         non_null_field_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1232,12 +1326,196 @@ class TestMergeSchemas(unittest.TestCase):
                 ]
             )
 
+
+class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
+    def test_edge_outbound_side_interface(self):
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.basic_schema)),
+                ('second', parse(ISS.interface_with_subclasses_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'id',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Individual',
+                        field_name = 'ID',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Individual: Individual
+              President: President
+            }
+
+            type Human {
+              id: String
+              out_example_edge: [Individual] @stitch(source_field: "id", sink_field: "ID")
+            }
+
+            interface Individual {
+              ID: String
+              in_example_edge: [Human] @stitch(source_field: "ID", sink_field: "id")
+            }
+
+            type President implements Individual {
+              ID: String
+              year: Int
+              in_example_edge: [Human] @stitch(source_field: "ID", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+    def test_edge_inbound_side_interface(self):
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.basic_schema)),
+                ('second', parse(ISS.interface_with_subclasses_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Individual',
+                        field_name = 'ID',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Human',
+                        field_name = 'id',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Individual: Individual
+              President: President
+            }
+
+            type Human {
+              id: String
+              in_example_edge: [Individual] @stitch(source_field: "id", sink_field: "ID")
+            }
+
+            interface Individual {
+              ID: String
+              out_example_edge: [Human] @stitch(source_field: "ID", sink_field: "id")
+            }
+
+            type President implements Individual {
+              ID: String
+              year: Int
+              out_example_edge: [Human] @stitch(source_field: "ID", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+    def test_edge_both_sides_interfaces(self):
+        additional_interface_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            interface Person {
+              identifier: String
+              name: String
+            }
+
+            type Politician implements Person {
+              identifier: String
+              name: String
+              party: String
+            }
+
+            type SchemaQuery {
+              Person: Person
+              Politician: Politician
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.interface_with_subclasses_schema)),
+                ('second', parse(additional_interface_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name = 'example_edge',
+                    outbound_side = FieldReference(
+                        schema_id = 'first',
+                        type_name = 'Individual',
+                        field_name = 'ID',
+                    ),
+                    inbound_side = FieldReference(
+                        schema_id = 'second',
+                        type_name = 'Person',
+                        field_name = 'identifier',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Individual: Individual
+              President: President
+              Person: Person
+              Politician: Politician
+            }
+
+            interface Individual {
+              ID: String
+              out_example_edge: [Person] @stitch(source_field: "ID", sink_field: "identifier")
+            }
+
+            type President implements Individual {
+              ID: String
+              year: Int
+              out_example_edge: [Person] @stitch(source_field: "ID", sink_field: "identifier")
+            }
+
+            interface Person {
+              identifier: String
+              name: String
+              in_example_edge: [Individual] @stitch(source_field: "identifier", sink_field: "ID")
+            }
+
+            type Politician implements Person {
+              identifier: String
+              name: String
+              party: String
+              in_example_edge: [Individual] @stitch(source_field: "identifier", sink_field: "ID")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+
     # TODO:
-    # Adding edge to interface and same edge inherited by objects implementing interface
-    # Adding edge whose outbound is interface
-    # Adding edge whose inbound is interface
-    # Adding edge both ends are interface
-    # Error when adding edge to union
-    # Matching non-builtin scalar
+    # The same thing as interfaces but with subclasses through unions and type_equivalence_hints
     # Adding edge to type that appears in type_equivalence_hints
     # combination of interface and unions
