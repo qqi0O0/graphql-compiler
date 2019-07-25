@@ -921,7 +921,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_scalar_type(self):
+    def test_invalid_edge_vertex_field_scalar_type(self):
         with self.assertRaises(InvalidCrossSchemaEdgeError):
             merge_schemas(
                 OrderedDict([
@@ -946,7 +946,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_enum_type(self):
+    def test_invalid_edge_vertex_field_enum_type(self):
         with self.assertRaises(InvalidCrossSchemaEdgeError):
             merge_schemas(
                 OrderedDict([
@@ -971,7 +971,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_union_type(self):
+    def test_invalid_edge_vertex_field_union_type(self):
         with self.assertRaises(InvalidCrossSchemaEdgeError):
             merge_schemas(
                 OrderedDict([
@@ -996,7 +996,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_nonexistent_field(self):
+    def test_invalid_edge_nonexistent_property_field(self):
         with self.assertRaises(InvalidCrossSchemaEdgeError):
             merge_schemas(
                 OrderedDict([
@@ -1021,7 +1021,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_clash_with_existing_field(self):
+    def test_invalid_edge_new_vertex_field_clash_with_existing_field(self):
         clashing_field_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1060,7 +1060,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_clash_with_previous_edge(self):
+    def test_invalid_edge_new_vertex_field_clash_with_previous_edge_vertex_field(self):
         with self.assertRaises(SchemaNameConflictError):
             merge_schemas(
                 OrderedDict([
@@ -1099,7 +1099,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_field_not_scalar_type(self):
+    def test_invalid_edge_property_field_not_scalar_type(self):
         not_scalar_field_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1137,7 +1137,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_field_list_of_types(self):
+    def test_invalid_edge_property_field_list_of_types(self):
         not_scalar_field_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1175,7 +1175,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_field_list_of_scalars(self):
+    def test_invalid_edge_property_field_list_of_scalars(self):
         not_scalar_field_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1213,7 +1213,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_field_non_null_type(self):
+    def test_invalid_edge_property_field_non_null_type(self):
         not_scalar_field_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1251,7 +1251,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_field_mismatched_scalar(self):
+    def test_invalid_edge_property_fields_mismatched_scalars(self):
         mismatched_scalar_schema = dedent('''\
             schema {
               query: SchemaQuery
@@ -1289,7 +1289,7 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 ]
             )
 
-    def test_invalid_edge_non_null_scalar_mismatch_normal_scalar(self):
+    def test_invalid_edge_property_fields_non_null_scalar_mismatch_normal_scalar(self):
         non_null_field_schema = dedent('''\
             schema {
               query: SchemaQuery
