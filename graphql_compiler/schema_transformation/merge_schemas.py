@@ -346,7 +346,7 @@ def _add_cross_schema_edges(schema_ast, type_name_to_schema_id, scalars, cross_s
     involve subclasses.
 
     Args:
-        scheam_ast: Document. It is modified by this function
+        schema_ast: Document. It is modified by this function
         type_name_to_schema_id: Dict[str, str], mapping type name to the id of the schema that the
                                 type is from
         scalars: Set[str], names of all scalars in the merged_schema so far
