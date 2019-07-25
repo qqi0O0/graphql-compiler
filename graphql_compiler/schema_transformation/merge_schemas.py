@@ -413,16 +413,15 @@ def _add_cross_schema_edges(schema_ast, type_name_to_schema_id, scalars, cross_s
             outbound_side.type_name, outbound_side.type_name
         )
 
-        # Get set of names subclasses, aka all the types that need the new edge field
-        outbound_edge_source_type_names = subclass_sets.get(outbound_side.type_name)
-        inbound_edge_source_type_names = subclass_sets.get(inbound_side.type_name)
-
+        # Get set of all the types that need the new edge field
+        outbound_edge_source_type_names = subclass_sets[outbound_side.type_name]
         for outbound_edge_source_type_name in outbound_edge_source_type_names:
             source_type_node = type_name_to_definition[outbound_edge_source_type_name]
             _add_edge_field(source_type_node, outbound_edge_sink_type_name,
                             outbound_side.field_name, inbound_side.field_name, edge_name, 'out')
 
         if not cross_schema_edge.out_edge_only:
+            inbound_edge_source_type_names = subclass_sets[inbound_side.type_name]
             for inbound_edge_source_type_name in inbound_edge_source_type_names:
                 source_type_node = type_name_to_definition[inbound_edge_source_type_name]
                 _add_edge_field(source_type_node, inbound_edge_sink_type_name,
