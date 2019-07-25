@@ -243,7 +243,7 @@ def _process_directive_definition(directive, existing_directives, merged_schema_
         directive: DirectiveDefinition, an AST node representing the definition of a directive
         existing_directives: Dict[str, DirectiveDefinition], mapping the name of each existing
                              directive to the AST node defining it. It is modified by this
-                            function
+                             function
         merged_schema_ast: Document, AST representing a schema. It is modified by this function
     """
     directive_name = directive.name.value
@@ -605,7 +605,8 @@ def _add_edge_field(source_type_node, sink_type_name, source_field_name, sink_fi
     if any(field.name.value == new_edge_field_name for field in type_fields):
         raise SchemaNameConflictError(
             u'New field "{}" under type "{}" created by the {}bound field of edge named '
-            u'"{}" clashes with an existing field of the same name.'.format(
+            u'"{}" clashes with an existing field of the same name. Consider changing the '
+            u'name of your edge to avoid name conflicts.'.format(
                 new_edge_field_name, source_type_node.name.value, direction, edge_name
             )
         )
