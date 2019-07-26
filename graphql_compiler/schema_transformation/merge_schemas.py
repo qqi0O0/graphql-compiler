@@ -7,7 +7,7 @@ from graphql.language import ast as ast_types
 from graphql.language.printer import print_ast
 import six
 
-from ..compiler.helpers import OUTBOUND_EDGE_DIRECTION, INBOUND_EDGE_DIRECTION
+from ..compiler.helpers import INBOUND_EDGE_DIRECTION, OUTBOUND_EDGE_DIRECTION
 from .subclass import compute_subclass_sets
 from .utils import (
     InvalidCrossSchemaEdgeError, SchemaNameConflictError, check_ast_schema_is_valid,
@@ -18,7 +18,7 @@ from .utils import (
 MergedSchemaDescriptor = namedtuple(
     'MergedSchemaDescriptor', (
         'schema_ast',  # Document, AST representing the merged schema
-        'type_name_to_schema_id', # Dict[str, str], mapping type name to the id of its schema
+        'type_name_to_schema_id',  # Dict[str, str], mapping type name to the id of its schema
     )
 )
 
