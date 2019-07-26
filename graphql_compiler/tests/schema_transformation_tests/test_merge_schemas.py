@@ -525,12 +525,12 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -572,12 +572,12 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -598,12 +598,12 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -658,12 +658,12 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -719,12 +719,12 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -780,12 +780,12 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='birthday',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='bday',
@@ -831,12 +831,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='schema',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='schema',
                             type_name='Droid',
                             field_name='id',
@@ -856,12 +856,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='third',
                             type_name='Person',
                             field_name='identifier',
@@ -881,12 +881,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Person',
                             field_name='identifier',
@@ -906,12 +906,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Droid',
                             field_name='identifier',
@@ -931,12 +931,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='String',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Droid',
                             field_name='identifier',
@@ -956,12 +956,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Height',
                             field_name='identifier',
@@ -981,12 +981,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='HumanOrDroid',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Kid',
                             field_name='id',
@@ -1006,12 +1006,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='name',
@@ -1045,12 +1045,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='identifier',
@@ -1070,12 +1070,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='identifier',
@@ -1084,12 +1084,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                     ),
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='identifier',
@@ -1122,12 +1122,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='friend',
@@ -1160,12 +1160,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='friend',
@@ -1198,12 +1198,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='id',
@@ -1236,12 +1236,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='friend',
@@ -1274,12 +1274,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='clashing_name',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='identifier',
@@ -1312,12 +1312,12 @@ class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
                 [
                     CrossSchemaEdgeDescriptor(
                         edge_name='example_edge',
-                        outbound_side=FieldReference(
+                        outbound_field_reference=FieldReference(
                             schema_id='first',
                             type_name='Human',
                             field_name='id',
                         ),
-                        inbound_side=FieldReference(
+                        inbound_field_reference=FieldReference(
                             schema_id='second',
                             type_name='Person',
                             field_name='identifier',
@@ -1350,7 +1350,7 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             type_equivalence_hints[object_type] = union_type
         return type_equivalence_hints
 
-    def test_edge_outbound_side_interface(self):
+    def test_edge_outbound_field_reference_interface(self):
         merged_schema = merge_schemas(
             OrderedDict([
                 ('first', parse(ISS.basic_schema)),
@@ -1359,12 +1359,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Individual',
                         field_name='ID',
@@ -1402,7 +1402,7 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
-    def test_edge_inbound_side_interface(self):
+    def test_edge_inbound_field_reference_interface(self):
         merged_schema = merge_schemas(
             OrderedDict([
                 ('first', parse(ISS.basic_schema)),
@@ -1411,12 +1411,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Individual',
                         field_name='ID',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
@@ -1484,12 +1484,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Individual',
                         field_name='ID',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -1536,7 +1536,7 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
-    def test_edge_outbound_side_union_equivalent_type(self):
+    def test_edge_outbound_field_reference_union_equivalent_type(self):
         schema_id_to_ast = OrderedDict([
             ('first', parse(ISS.basic_schema)),
             ('second', parse(ISS.union_with_subclasses_schema)),
@@ -1546,12 +1546,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Human',
                         field_name='id',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
@@ -1623,12 +1623,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Person',
                         field_name='identifier',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Individual',
                         field_name='ID',
@@ -1691,12 +1691,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
             [
                 CrossSchemaEdgeDescriptor(
                     edge_name='example_edge',
-                    outbound_side=FieldReference(
+                    outbound_field_reference=FieldReference(
                         schema_id='first',
                         type_name='Individual',
                         field_name='ID',
                     ),
-                    inbound_side=FieldReference(
+                    inbound_field_reference=FieldReference(
                         schema_id='second',
                         type_name='Person',
                         field_name='identifier',
