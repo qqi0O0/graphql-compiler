@@ -16,10 +16,9 @@ from graphql.language import ast as ast_types
 
 QueryConnection = namedtuple(
     'QueryConnection', (
-        'parent_query_node',
-        'parent_field',
-        'child_query_node',
-        'child_field',
+        'sink_query_node',  # QueryNode namedtuple
+        'source_field',  # Field
+        'sink_field',  # Field
     )
 )
 
@@ -29,6 +28,17 @@ class QueryNode(object):
         self.query_ast = query_ast
         self.parent_query_connection = None
         self.child_query_connections = []
+
+    # Represent as a completely bidirectional, unrooted tree?
+    # Seems excessive, default to a normally rooted tree, but make it not impossible to change
+    # the rooting if desired.
+    # Current way of expressing parent and child connections seems like a pain to reverse,
+    # but maybe it's ok
+    # A single field called 'neighbors' or something
+    # @output directives can be attached before order of the tree is known, but @filter and
+    # information on what column is put into what filter must come after the order of the tree
+    # is known
+    # How would one express edge directions?
 
 
 def split_query(query_ast, merged_schema_descriptor):
@@ -83,7 +93,7 @@ def split_query(query_ast, merged_schema_descriptor):
         visitor = TypeInfoVisitor(type_info, split_query_visitor)
         visit(current_node_to_visit.query_ast, visitor)
         query_nodes_to_visit.extend(
-            child_query_connection.child_query_node
+            child_query_connection.sink_query_node
             for child_query_connection in current_node_to_visit.child_query_connections
         )
 
@@ -194,32 +204,10 @@ class SplitQueryVisitor(Visitor):
         # leave_Field will not be called on this field
         return False
 
-'''
-
-JoinDescriptor = namedtuple(
-    'JoinDescriptor', (
-        # str, the outname of the @output directive for the field in the parent query node that
-        # is used to join together query pieces
-        parent_output_name,
-        # str, the outname of the @output directive for the field in the current query node
-        # that is use to join together query pieces
-        output_name,
-        # Any other useful information, e.g. is_optional to determining whether the join is
-        # inner or outer
-    )
-)
-
-
-# keep track of the set of column names that are real user output, as well as parent output
-# to child output edges. No delete column until end. When merging an edge, fail if both ends
-# are user outputs. Update the set of user outputs by the union. Don't merge two columns into
-# one? This means I don't need to replace info about edges in the parent and siblings upon
-# merging an edge whose child end is user input.
-# If column deleting only happens at the end, then all columns need unique names globally.
 
 
 # Ok, conclusion:
-# Keep track of set of user output columns
+# Keep track of set of user output columns, update parent set with union when joining
 # Delete all non-user-output columns at the very end
 # Columns have globally unique names
 # Each merging edge keeps track of names of parent and child columns, as well as any additional
@@ -235,24 +223,6 @@ class QueryNode(object):  # rename to QueryPlanNode?
     the split query pieces. If node A is a child of node B, then the execution of the query
     piece in node A is dependent on some outputs of the query piece in node B.
     """
-    # NOTE: issue with parent_output_name and input_parameter_name is fairly complex
-    # there are actually three names: parent's output name, name used in own filter directive,
-    # and own output name
-    # which ones must be the same? The filter directive one has nothing to do with the other
-    # two, since it's in a confined scope, being a local variable inside the query.
-    # The relationship between the other two depends on the stitching step, but I lean towards
-    # that they're unrelated, since it's possible for there to be an output directive on both
-    # sides
-    # The local variable can't be guaranteed to be named the same as the parent output either,
-    # since it could be that the parent output is forced into some name by @output, and that
-    # named local variable already exists
-
-    # Keep a map of column used in joining, to actual column name as appearing in the output
-    # A layer of indirection huh
-    # If some actual column name is internal and is no longer mapped to, it can be deleted?
-    # new class that wraps around a result, but additionally includes information on what
-    # columns join what?
-
     # Also need to deal with directives like @fold and @optional, the code needs to be able
     # to deal with these additions
     def __init__(self, query_ast, schema_id, input_filter_name, parent_join_descriptor,
@@ -299,7 +269,6 @@ class QueryResultNode(object):
             child_result_nodes: List[QueryResultNode], the children of the current result
         """
         # Does order of joining edges matter?
-
 
 
 def split_query(query_ast, merged_schema_descriptor):
@@ -530,43 +499,3 @@ class SplitQueryVisitor(Visitor):
             directives=directives
         )
         selection_set.selections.insert(0, new_selection)
-'''
-
-# TODO:
-# various edge cases involving duplicating existing fields
-# e.g.
-# graphql_query = '''
-# {
-#   Human {
-#     id @output(out_name: "something")
-#     out_Human_Person {
-#       ID @output(out_name: "something_else")
-#     }
-#   }
-# }
-# '''
-# both id and ID are duplicated with an @output
-# can't have two @output directives on a single field
-# so both id and ID will have columns with random names. How to know what columns to stitch
-# together in the combining step?
-# If each "same field" can only appear in output once, then all occurances of "the same field"
-# can have the same output name (same column). Otherwise, if the above case is allowed, then
-# different columns may be named differently, and we can't just stitch together identically
-# named columns.
-# For a legal query example, consider 
-# {
-#   Human {
-#     out_Human_Person {
-#       friend {
-#         in_Human_Person {
-#           id @output(out_name: "something")
-#         }
-#       }
-#     }
-#   }
-# }
-# The id ID connection happens in the first step. If this tree is not considered holistically,
-# then these columns have been given a name in the first step. But this column ultimately
-# needs to be named "something"
-# Additionally need some way of recording whether the stitching column should be kept after
-# merging, and this differs depending on whether the edge is at the root of the tree or not?
