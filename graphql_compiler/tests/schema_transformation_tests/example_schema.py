@@ -21,6 +21,8 @@ type Human {
 type SchemaQuery {
   Human: Human
 }
+
+directive @output(out_name: String) on FIELD
 '''
 
 schema2 = '''

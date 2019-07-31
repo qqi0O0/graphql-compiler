@@ -162,10 +162,12 @@ class SplitQueryVisitor(Visitor):
             sink_type_name = type_coercion_inline_fragment.type_condition.name.value
             sink_selection_set = type_coercion_inline_fragment.selection_set
 
-        # Add new field to child's selection set
-        # TODO: don't add if this field already exists
-        sink_field = ast_types.Field(name=ast_types.Name(value=sink_field_name))
-        sink_selection_set.selections.insert(0, sink_field)
+        # Check for existing field in child
+        sink_field = self._try_get_field_with_name(sink_selection_set.selections, sink_field_name)
+        if sink_field is None:
+            # Add new field to child's selection set
+            sink_field = ast_types.Field(name=ast_types.Name(value=sink_field_name))
+            sink_selection_set.selections.insert(0, sink_field)
         # Create new AST for the pruned branch
         branch_query_ast = ast_types.Document(
             definitions=[
