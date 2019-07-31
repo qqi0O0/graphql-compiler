@@ -155,7 +155,7 @@ class SplitQueryVisitor(Visitor):
             sink_type_name = type_coercion_inline_fragment.type_condition.name.value
             sink_selection_set = type_coercion_inline_fragment.selection_set
 
-        # Add new field to selection set
+        # Add new field to child's selection set
         # TODO: don't add if this field already exists
         sink_field = ast_types.Field(name=ast_types.Name(value=sink_field_name))
         sink_selection_set.selections.insert(0, sink_field)
