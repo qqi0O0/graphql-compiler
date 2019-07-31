@@ -4,7 +4,6 @@ import unittest
 
 from graphql import parse
 from graphql.language.printer import print_ast
-
 from graphql_compiler.schema_transformation.rename_query import rename_query
 
 from ...exceptions import GraphQLValidationError

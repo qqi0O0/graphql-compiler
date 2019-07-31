@@ -1,12 +1,10 @@
 from collections import namedtuple
 
 from graphql import build_ast_schema
-from graphql.language.visitor import visit, Visitor, TypeInfoVisitor
 from graphql.language import ast as ast_types
-from graphql.type.definition import GraphQLList, GraphQLUnionType, GraphQLNonNull
+from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
+from graphql.type.definition import GraphQLList, GraphQLNonNull, GraphQLUnionType
 from graphql.utils.type_info import TypeInfo
-from graphql.language import ast as ast_types
-
 
 
 # Break down into two steps, one for splitting the tree with minimum modifications (just adding

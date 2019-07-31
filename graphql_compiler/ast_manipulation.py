@@ -1,6 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from graphql.error import GraphQLSyntaxError
-from graphql.language.ast import Document, InlineFragment, OperationDefinition, NonNullType
+from graphql.language.ast import Document, InlineFragment, NonNullType, OperationDefinition
 from graphql.language.parser import parse
 
 from .exceptions import GraphQLParsingError

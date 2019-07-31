@@ -2,9 +2,8 @@
 from collections import OrderedDict
 
 from graphql import parse
-
 from graphql_compiler.schema_transformation.merge_schemas import (
-    merge_schemas, CrossSchemaEdgeDescriptor, FieldReference
+    CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
 )
 
 
