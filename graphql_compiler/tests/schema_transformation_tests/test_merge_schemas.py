@@ -820,6 +820,135 @@ class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
         ''')
         self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
 
+    def test_id_match_string(self):
+        id_field_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              identifier: ID
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(ISS.basic_schema)),
+                ('second', parse(id_field_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name='example_edge',
+                    outbound_field_reference=FieldReference(
+                        schema_id='first',
+                        type_name='Human',
+                        field_name='id',
+                    ),
+                    inbound_field_reference=FieldReference(
+                        schema_id='second',
+                        type_name='Person',
+                        field_name='identifier',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Person: Person
+            }
+
+            type Human {
+              id: String
+              out_example_edge: [Person] @stitch(source_field: "id", sink_field: "identifier")
+            }
+
+            type Person {
+              identifier: ID
+              in_example_edge: [Human] @stitch(source_field: "identifier", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
+    def test_id_match_int(self):
+        int_field_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Human {
+              id: Int
+            }
+
+            type SchemaQuery {
+              Human: Human
+            }
+        ''')
+        id_field_schema = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              identifier: ID
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        merged_schema = merge_schemas(
+            OrderedDict([
+                ('first', parse(int_field_schema)),
+                ('second', parse(id_field_schema)),
+            ]),
+            [
+                CrossSchemaEdgeDescriptor(
+                    edge_name='example_edge',
+                    outbound_field_reference=FieldReference(
+                        schema_id='first',
+                        type_name='Human',
+                        field_name='id',
+                    ),
+                    inbound_field_reference=FieldReference(
+                        schema_id='second',
+                        type_name='Person',
+                        field_name='identifier',
+                    ),
+                    out_edge_only=False,
+                ),
+            ]
+        )
+        merged_schema_string = dedent('''\
+            schema {
+              query: RootSchemaQuery
+            }
+
+            type RootSchemaQuery {
+              Human: Human
+              Person: Person
+            }
+
+            type Human {
+              id: Int
+              out_example_edge: [Person] @stitch(source_field: "id", sink_field: "identifier")
+            }
+
+            type Person {
+              identifier: ID
+              in_example_edge: [Human] @stitch(source_field: "identifier", sink_field: "id")
+            }
+        ''')
+        self.assertEqual(merged_schema_string, print_ast(merged_schema.schema_ast))
+
 
 class TestMergeSchemasInvalidCrossSchemaEdges(unittest.TestCase):
     def test_invalid_edge_within_single_schema(self):

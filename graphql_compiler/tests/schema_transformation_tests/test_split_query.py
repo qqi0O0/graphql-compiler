@@ -7,7 +7,7 @@ from graphql import parse
 
 from graphql_compiler.schema_transformation.split_query import split_query
 
-from .example_schema import basic_merged_schema
+#from .example_schema import basic_merged_schema
 
 
 class TestSplitQuery(unittest.TestCase):
