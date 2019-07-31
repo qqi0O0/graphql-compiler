@@ -3,11 +3,11 @@ from collections import OrderedDict
 from textwrap import dedent
 import unittest
 
-from graphql import parse
+from graphql import parse, print_ast
 from graphql_compiler.schema_transformation.split_query import split_query
 
 
-#from .example_schema import basic_merged_schema
+from .example_schema import basic_merged_schema
 
 
 class TestSplitQuery(unittest.TestCase):
@@ -15,7 +15,16 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Human {
-                out_Human_Person
+                out_Human_Person {
+                  name
+                }
               }
             }
         ''')
+        print(query_str)
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        print(query_node)
+        print(print_ast(query_node.query_ast))
+        print(query_node.child_query_connections)
+        for child_query_connection in query_node.child_query_connections:
+            print(print_ast(child_query_connection.sink_query_node.query_ast))

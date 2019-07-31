@@ -15,6 +15,7 @@ schema {
 type Human {
   name: String
   friend: Human
+  id: String
 }
 
 type SchemaQuery {
@@ -30,6 +31,7 @@ schema {
 type Person {
   age: Int
   enemy: Person
+  identifier: String
 }
 
 type SchemaQuery {
@@ -39,8 +41,8 @@ type SchemaQuery {
 
 basic_merged_schema = merge_schemas(
     OrderedDict([
-        ('first', parse(ISS.basic_schema)),
-        ('second', parse(ISS.same_field_schema)),
+        ('first', parse(schema1)),
+        ('second', parse(schema2)),
     ]),
     [
         CrossSchemaEdgeDescriptor(
