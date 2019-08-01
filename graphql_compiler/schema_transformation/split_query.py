@@ -22,13 +22,77 @@ QueryConnection = namedtuple(
 )
 
 
+ModifiedQueryConnection = namedtuple(
+    'ModifiedQueryConnection', (
+        'sink_query_node',  # QueryNode namedtuple
+        'parent_output_name',  # str, name of the column in the parent raw results used to join
+        'child_output_name',  # str, name of the column in the child raw results used to join
+        'child_input_filter_name',
+        # str, name of the local variable inside filter where the column named parent_output_name
+        # goes
+        # possible to ensure that child_input_filter_name is the same as parent_output_name?
+        # probably, both names are going to be only for internal use
+        # wait no, parent_output_name could be a real user output
+
+        # is this necessary? This information and more is available in the source_field and
+        # sink_field of above, having access to the fields also somewhat helps figure out
+        # variable name for filter. But what if there are multiple filters for different purposes?
+    )
+)
+
+
 class QueryNode(object):
     def __init__(self, query_ast):  # schema_id?
         self.query_ast = query_ast
         self.parent_query_connection = None
         self.child_query_connections = []
-        # Since this is used in the first step, there is no need to keep track of which outputs
-        # are user outputs, since no outputs have been added
+        self.intermediate_output_names = set()
+        # Set[str], names of columns that are used only internally for joining, and should be
+        # removed at the end. This will only become useful in the second step, as fields are
+        # modified
+        self.input_filter_name = None
+        # str, name of the local variable that the appropriate output column of the parent's
+        # results will plug into. Optimally this should be associated with the parent edge,
+        # rather than with the node, as one can see by imagining a node with multiple parents
+        # should we extend to not simply tree structure. But this information is only available
+        # after the second step, after declaration
+
+        # nope, this shouldn't be associated with the parent edge, since the edge doesn't know
+        # who's parent and who's child
+
+        # Can resolve this if we make QueryConnection into an actual class though!
+        
+        # Where do query results go?
+
+    def add_output_and_filter_directives(self):
+        """Add directives to AST and all child ASTs, record names of outputs and filters.
+
+        Can only be called once.
+        """
+        # TODO: validation that it hasn't been called
+        # The parent being called will add @filter and @output to self.query_ast's connecting
+        # field, potentially put an element into self.intermediate_output_names, and will
+        # set self.input_filter_name.
+        for child_query_connection in child_query_connections:
+            child_query_node = child_query_connection.sink_query_node
+            parent_field = child_query_connection.source_field
+            child_field = child_query_connection.sink_field
+            # Add @output to parent field
+
+            # Edit intermediate_output_names in parent
+
+            # Add @output and @filter to child field
+
+            # Edit intermediate_output_names in child
+            # Edit input_filter_name in child
+
+
+    # putting in new directives and recording information about input filter name and so on
+    # still happens on QueryNode
+
+    # but going frmo query AST to result, we want new type ResultNode or something that contains
+    # relations with other ResultNodes and also stitching column name information inherited
+    # from QueryNodes.
 
     # A QueryNode is relatively easy to reroot -- just switch parent_query_connection with the
     # appropriate child_query_connection in each node
@@ -272,8 +336,44 @@ class SplitQueryVisitor(Visitor):
         return False
 
 
+# After splitting query, some other process is going to rearrange the QueryNodes into a tree
+# of the desired execution order. For now, it's only possible to do a tree shaped order,
+# but it's entirely possible to extend this into an arbitrarily acyclic shaped order by
+# extending parent_query_connections into a list
+
+# The next step is adding @output and @filter directives as necessary, based on a given ordering
+# legal to have multiple @filter directives, but be open to the possibility of modifying existing
+# @filter directives
+
+
+def modify_split_query(query_node):
+    """Add @filter and @output to appropriate fields in query_node and its children.
+
+    Assume at this point the query_node's structure has been established, and @filter
+    directives need to be added to the child in each edge.
+
+    Also fill in information about which @output columns are added for internal joining use,
+    as we traverse through QueryNodes.
+    """
+
+
+
+
+
+class QueryNode(object):
+    def __init__(self, query_ast):  # schema_id?
+        self.query_ast = query_ast
+        self.parent_query_connection = None
+        self.child_query_connections = []
+        self.intermediate_output_names = set()
+        # Set[str], names of columns that are used only internally for joining, and should be
+        # removed at the end. This will only become useful in the second step, as fields are
+        # modified
+        self.input_filter_name = None
+
 # Ok, conclusion:
 # Keep track of set of user output columns, update parent set with union when joining
+# Can also keep track of set of intermediate columns that we assigned
 # Delete all non-user-output columns at the very end
 # Columns have globally unique names
 # Each merging edge keeps track of names of parent and child columns, as well as any additional
