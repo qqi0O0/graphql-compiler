@@ -42,6 +42,8 @@ ModifiedQueryConnection = namedtuple(
 
 
 class QueryNode(object):
+    _output_count = 0
+
     def __init__(self, query_ast):  # schema_id?
         self.query_ast = query_ast
         self.parent_query_connection = None
@@ -60,9 +62,15 @@ class QueryNode(object):
         # nope, this shouldn't be associated with the parent edge, since the edge doesn't know
         # who's parent and who's child
 
+        # probably ok to just have input_filter_name be equal to the parent's output column
+        # name
+
         # Can resolve this if we make QueryConnection into an actual class though!
         
         # Where do query results go?
+
+    def reroot_tree(self):
+        pass
 
     def add_output_and_filter_directives(self):
         """Add directives to AST and all child ASTs, record names of outputs and filters.
@@ -85,6 +93,11 @@ class QueryNode(object):
 
             # Edit intermediate_output_names in child
             # Edit input_filter_name in child
+
+    def _assign_and_return_output_name(self):
+        output_name = '__intermediate_output_' + str(QueryNode._output_count)
+        QueryNode._output_count += 1
+        return output_name
 
 
     # putting in new directives and recording information about input filter name and so on
