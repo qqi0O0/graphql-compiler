@@ -50,6 +50,13 @@ ModifiedQueryConnection = namedtuple(
 # of the outputs
 # The StableQueryNode object could be a namedtuple since it's not going to change.
 # print_query_plan can become a function that takes in a StableQueryNode
+
+# Collect intermediate_output_names not along the way in the stable node, but in the function
+# that takes in a unstable node and adds directive, and output the set of names at the end in
+# addition to the stable node?
+# don't have StableQueryConnections, but rather StableQueryNodes connect directly to one another,
+# and there's a separate dictionary that records the columns used to connect?
+# note that the hash of namedtuple is based on value not id
 class QueryNode(object):
     _output_count = 0
 
@@ -219,6 +226,7 @@ def split_query(query_ast, merged_schema_descriptor):
         QueryNode, the root of the tree of QueryNodes. Each node contains an AST
         representing a part of the overall query, targeting a specific schema
     """
+    # make copy? original ast is definitely modified
     # If schema directives are correctly represented in the schema object, type_info is all
     # that's needed to detect and address stitching fields. However, before this issue is
     # fixed, it's necessary to use additional information from preprocessing the schema AST
