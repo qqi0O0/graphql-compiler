@@ -1,6 +1,6 @@
 from collections import namedtuple
 
-from graphql import build_ast_schema
+from graphql import build_ast_schema, print_ast
 from graphql.language import ast as ast_types
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.type.definition import GraphQLList, GraphQLNonNull, GraphQLUnionType
@@ -41,6 +41,15 @@ ModifiedQueryConnection = namedtuple(
 )
 
 
+# Need observer like query plan. Query plan needs to include information on what columns to
+# stitch as well
+# NOTE:
+# one class here call it "UnstableQueryNode" or something, make add_output_and_filter_directives
+# into a function that takes in a UnstableQueryNode and outputs some kind of StableQueryNode
+# that contains the new directives, no longer contains query_connections but just the names
+# of the outputs
+# The StableQueryNode object could be a namedtuple since it's not going to change.
+# print_query_plan can become a function that takes in a StableQueryNode
 class QueryNode(object):
     _output_count = 0
 
@@ -50,22 +59,19 @@ class QueryNode(object):
         self.child_query_connections = []
         self.intermediate_output_names = set()
         # Set[str], names of columns that are used only internally for joining, and should be
-        # removed at the end. This will only become useful in the second step, as fields are
-        # modified
-        self.input_filter_name = None
+        # removed at the end, in the output of this query piece. This will only become useful
+        # in the second step, as fields are modified
+        #self.input_filter_name = None
         # str, name of the local variable that the appropriate output column of the parent's
         # results will plug into. Optimally this should be associated with the parent edge,
         # rather than with the node, as one can see by imagining a node with multiple parents
         # should we extend to not simply tree structure. But this information is only available
         # after the second step, after declaration
 
-        # nope, this shouldn't be associated with the parent edge, since the edge doesn't know
-        # who's parent and who's child
-
         # probably ok to just have input_filter_name be equal to the parent's output column
         # name
-
-        # Can resolve this if we make QueryConnection into an actual class though!
+        # This will cause issues in a rare edge case, where the parent's output is user defined,
+        # and this out_name conflicts with the name of another local variable.
         
         # Where do query results go?
 
@@ -73,31 +79,109 @@ class QueryNode(object):
         pass
 
     def add_output_and_filter_directives(self):
-        """Add directives to AST and all child ASTs, record names of outputs and filters.
+        """Add any necessary directives to AST and all child ASTs, record names used.
 
-        Can only be called once.
+        Should only be called once, once the structure of the tree of QueryNodes is fixed.
         """
         # TODO: validation that it hasn't been called
         # The parent being called will add @filter and @output to self.query_ast's connecting
         # field, potentially put an element into self.intermediate_output_names, and will
         # set self.input_filter_name.
-        for child_query_connection in child_query_connections:
+        for child_query_connection in self.child_query_connections:
             child_query_node = child_query_connection.sink_query_node
             parent_field = child_query_connection.source_field
             child_field = child_query_connection.sink_field
-            # Add @output to parent field
 
-            # Edit intermediate_output_names in parent
+            # Get existing @output or add @output to parent
+            parent_output_directive = _try_get_ast_with_name_and_type(
+                parent_field.directives, u'output', ast_types.Directive
+            )
+            if parent_output_directive is None:
+                # Create and add new directive, edit intermediate_output_names in parent
+                parent_out_name = self._assign_and_return_output_name()
+                self.intermediate_output_names.add(parent_out_name)
+                parent_output_directive = _get_output_directive(parent_out_name)
+                parent_field.directives.append(parent_output_directive)
+            else:
+                parent_out_name = parent_output_directive.arguments[0].value.value
 
-            # Add @output and @filter to child field
+            # Get existing @output or add @output to child
+            child_output_directive = _try_get_ast_with_name_and_type(
+                child_field.directives, u'output', ast_types.Directive
+            )
+            if child_output_directive is None:
+                # Create and add new directive, edit intermediate_output_names in child
+                child_out_name = self._assign_and_return_output_name()
+                child_query_node.intermediate_output_names.add(child_out_name)
+                child_output_directive = _get_output_directive(child_out_name)
+                child_field.directives.append(child_output_directive)
 
-            # Edit intermediate_output_names in child
-            # Edit input_filter_name in child
+            # Add @filter to child
+            # Local variable in @filter will be named the same as the parent output
+            # Only add, don't change existing filters?
+            child_filter_directive = _get_in_collection_filter_directive(parent_out_name)
+            child_field.directives.append(child_filter_directive)
+
+            # Recursively add directives to children
+            child_query_node.add_output_and_filter_directives()
 
     def _assign_and_return_output_name(self):
-        output_name = '__intermediate_output_' + str(QueryNode._output_count)
+        output_name = u'__intermediate_output_' + str(QueryNode._output_count)
         QueryNode._output_count += 1
         return output_name
+
+    def get_nodes_in_dfs_order(self):
+        return self._get_nodes_in_dfs_order_helper(0)
+
+    def _get_nodes_in_dfs_order_helper(self, depth):
+        nodes_in_dfs_order = [(self, depth)]
+        for child_query_connection in self.child_query_connections:
+            child_query_node = child_query_connection.sink_query_node
+            nodes_in_dfs_order.extend(child_query_node._get_nodes_in_dfs_order_helper(depth+1))
+        return nodes_in_dfs_order
+
+    def print_query_plan(self):
+        """Return string describing query plan."""
+        all_intermediate_output_names = set()
+        query_plan = u''
+        nodes_in_dfs_order = self.get_nodes_in_dfs_order()
+
+        for node, depth in nodes_in_dfs_order:
+            line_separation = u'\n' + u' ' * 8 * depth
+            query_plan += line_separation
+            if depth > 0:
+                # Include information about what columns to stitch together
+                # Perhaps include what column to use as input into filter of the same name
+                child_output_name, parent_output_name = _get_source_sink_output_names(
+                    node.parent_query_connection
+                )
+                query_plan += u'join (output {}) -> (output {})'.format(
+                    parent_output_name, child_output_name
+                )
+                query_plan += line_separation
+            node_query_ast_str = print_ast(node.query_ast)
+            node_query_ast_str = node_query_ast_str.replace(u'\n', line_separation)
+            query_plan += node_query_ast_str
+            all_intermediate_output_names.update(node.intermediate_output_names)
+
+        meta_information = u'\nRemove the following outputs, which were included for internal '\
+                           u'joining use only:\n{}'.format(all_intermediate_output_names)
+        query_plan += meta_information
+
+        return query_plan
+
+
+def _get_source_sink_output_names(query_connection):
+    fields = (query_connection.source_field, query_connection.sink_field)
+    output_names = []
+    for field in fields:
+        output_directive = _try_get_ast_with_name_and_type(
+            field.directives, u'output', ast_types.Directive
+        )
+        assert(output_directive is not None)
+        output_name = output_directive.arguments[0].value.value
+        output_names.append(output_name)
+    return tuple(output_names)
 
 
     # putting in new directives and recording information about input filter name and so on
@@ -199,7 +283,7 @@ def _try_get_ast_with_name_and_type(asts, target_name, target_type):
     """Return the ast with the desired name and type from the list, if found.
 
     Args:
-        asts: List[Node]
+        asts: List[Node] or None
         target_name: str, name of the AST we're looking for
         target_type: Node, the type of the AST we're looking for. Must be a type with a .name
                      attribute, e.g. Field, Directive
@@ -208,12 +292,45 @@ def _try_get_ast_with_name_and_type(asts, target_name, target_type):
         Node, an element in the input list of ASTs of the correct name and type, or None if
         no such element exists
     """
+    if asts is None:
+        return None
     # Check there is only one?
     for ast in asts:
         if isinstance(ast, target_type):
             if ast.name.value == target_name:
                 return ast
     return None
+
+
+def _get_output_directive(out_name):
+    return ast_types.Directive(
+        name=ast_types.Name(value=u'output'),
+        arguments=[
+            ast_types.Argument(
+                name=ast_types.Name(value=u'out_name'),
+                value=ast_types.StringValue(value=out_name),
+            ),
+        ],
+    )
+
+def _get_in_collection_filter_directive(input_filter_name):
+    return ast_types.Directive(
+        name=ast_types.Name(value=u'filter'),
+        arguments=[
+            ast_types.Argument(
+                name=ast_types.Name(value='op_name'),
+                value=ast_types.StringValue(value='in_collection'),
+            ),
+            ast_types.Argument(
+                name=ast_types.Name(value='value'),
+                value=ast_types.ListValue(
+                    values=[
+                        ast_types.StringValue(value=u'$'+input_filter_name),
+                    ],
+                ),
+            ),
+        ],
+    )
 
 
 class SplitQueryVisitor(Visitor):
@@ -293,19 +410,24 @@ class SplitQueryVisitor(Visitor):
             # TODO: deal with preexisting directives
             node.name.value = parent_field_name
             assert(node.alias is None)
-            assert(node.arguments is None or node.arguments==[])
-            assert(node.directives is None or node.directives==[])
+            assert(node.arguments==[])
+            assert(node.directives==[])
             node.selection_set = []
-            source_field = node
+            parent_field = node
         else:
             # Remove stump field
             parent[key] = None
 
+        # TODO: deal with None as opposed to empty lists in various places
+
         # Process child field
         if child_field is None:
             # Add new field to child's selection set
-            child_field = ast_types.Field(name=ast_types.Name(value=child_field_name))
-            child_selection_set.selections.insert(0, child_field)
+            child_field = ast_types.Field(
+                name=ast_types.Name(value=child_field_name),
+                directives=[],
+            )
+            child_selection_set.selections.append(child_field)
 
         # Create child AST for the pruned branch
         branch_query_ast = ast_types.Document(
@@ -317,6 +439,7 @@ class SplitQueryVisitor(Visitor):
                             ast_types.Field(
                                 name=ast_types.Name(value=child_type_name),
                                 selection_set=child_selection_set,
+                                directives=[],
                             )
                         ]
                     )
@@ -369,20 +492,6 @@ def modify_split_query(query_node):
     as we traverse through QueryNodes.
     """
 
-
-
-
-
-class QueryNode(object):
-    def __init__(self, query_ast):  # schema_id?
-        self.query_ast = query_ast
-        self.parent_query_connection = None
-        self.child_query_connections = []
-        self.intermediate_output_names = set()
-        # Set[str], names of columns that are used only internally for joining, and should be
-        # removed at the end. This will only become useful in the second step, as fields are
-        # modified
-        self.input_filter_name = None
 
 # Ok, conclusion:
 # Keep track of set of user output columns, update parent set with union when joining
