@@ -41,15 +41,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        print(query_str)
-        query_node = split_query(parse(query_str), basic_merged_schema)
-        print(query_node)
-        print(print_ast(query_node.query_ast))
-        print(query_node.child_query_connections)
-        for child_query_connection in query_node.child_query_connections:
-            print(print_ast(child_query_connection.sink_query_node.query_ast))
-        print()
-        print()
 
     def test_existing_output_field_in_parent(self):
         query_str = dedent('''\
@@ -62,15 +53,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        print(query_str)
-        query_node = split_query(parse(query_str), basic_merged_schema)
-        print(query_node)
-        print(print_ast(query_node.query_ast))
-        print(query_node.child_query_connections)
-        for child_query_connection in query_node.child_query_connections:
-            print(print_ast(child_query_connection.sink_query_node.query_ast))
-        print()
-        print()
 
     def test_existing_field_in_child(self):
         query_str = dedent('''\
@@ -83,15 +65,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        print(query_str)
-        query_node = split_query(parse(query_str), basic_merged_schema)
-        print(query_node)
-        print(print_ast(query_node.query_ast))
-        print(query_node.child_query_connections)
-        for child_query_connection in query_node.child_query_connections:
-            print(print_ast(child_query_connection.sink_query_node.query_ast))
-        print()
-        print()
 
     def test_existing_output_field_in_child(self):
         query_str = dedent('''\
@@ -99,6 +72,32 @@ class TestSplitQuery(unittest.TestCase):
               Human {
                 out_Human_Person {
                   identifier @output(out_name: "result")
+                  name
+                }
+              }
+            }
+        ''')
+
+    def test_existing_field_in_both(self):
+        query_str = dedent('''\
+            {
+              Human {
+                id
+                out_Human_Person {
+                  identifier 
+                  name
+                }
+              }
+            }
+        ''')
+
+    def test_existing_field_in_both(self):
+        query_str = dedent('''\
+            {
+              Human {
+                id @output(out_name: "result1")
+                out_Human_Person {
+                  identifier @output(out_name: "result2")
                   name
                 }
               }

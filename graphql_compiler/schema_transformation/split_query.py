@@ -10,6 +10,7 @@ from graphql.utils.type_info import TypeInfo
 # Break down into two steps, one for splitting the tree with minimum modifications (just adding
 # the type on the outermost scope) and keeping track of connecting edge information, one for
 # modifying the split tree with appropriate @filter and @output directives
+# The second step will also need to keep track of what actual user outputs are
 
 
 QueryConnection = namedtuple(
@@ -19,9 +20,6 @@ QueryConnection = namedtuple(
         'sink_field',  # Field
     )
 )
-# Making the connect be source/sink rather than parent/child makes it much easier to reroot
-# the tree if needed -- just pick a different QueryConnection amoung child_query_connections
-# to replace parent_query_connection
 
 
 class QueryNode(object):
@@ -29,12 +27,12 @@ class QueryNode(object):
         self.query_ast = query_ast
         self.parent_query_connection = None
         self.child_query_connections = []
+        # Since this is used in the first step, there is no need to keep track of which outputs
+        # are user outputs, since no outputs have been added
 
-        # where to keep track of what output columns are actual user outputs?
+    # A QueryNode is relatively easy to reroot -- just switch parent_query_connection with the
+    # appropriate child_query_connection in each node
 
-    # Represent as a completely bidirectional, unrooted tree?
-    # Seems excessive, default to a normally rooted tree, but make it not impossible to change
-    # the rooting if desired.
     # @output directives can be attached before order of the tree is known, but @filter and
     # information on what column is put into what filter must come after the order of the tree
     # is known
@@ -42,6 +40,11 @@ class QueryNode(object):
 
 def split_query(query_ast, merged_schema_descriptor):
     """Split input query AST into a tree of QueryNodes targeting each individual schema.
+
+    Additional @output and @filter directives will not be added in this step. Fields that make
+    up the stitch will be added if necessary. The connection between QueryNodes will contain
+    those fields used in stitching, so that they can easily be modified to include more
+    directives.
 
     Args:
         query_ast: Document, representing a GraphQL query to split
@@ -55,34 +58,16 @@ def split_query(query_ast, merged_schema_descriptor):
         QueryNode, the root of the tree of QueryNodes. Each node contains an AST
         representing a part of the overall query, targeting a specific schema
     """
-    base_query_node = QueryNode(query_ast)
-    
-    type_info = TypeInfo(build_ast_schema(merged_schema_descriptor.schema_ast))
+    # If schema directives are correctly represented in the schema object, type_info is all
+    # that's needed to detect and address stitching fields. However, before this issue is
+    # fixed, it's necessary to use additional information from preprocessing the schema AST
+    edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
 
-    # If schema directives are not swallowed, type_info is all that's needed to detect and
-    # address stitching fields
-    # However, before this issue is fixed, it's necessary to use additional information from
-    # preprocessing the schema AST
-    # want: map of (type name, edge field name) to (source field name, sink field name)
-    edge_to_stitch_fields = {}
-    for type_definition in merged_schema_descriptor.schema_ast.definitions:
-        if isinstance(type_definition, (
-            ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
-        )):
-            for field_definition in type_definition.fields:
-                stitch_directive_arguments = None
-                for directive_definition in field_definition.directives:
-                    if directive_definition.name.value == u'stitch':
-                        stitch_directive_arguments = directive_definition.arguments
-                if stitch_directive_arguments is not None:
-                    # validation of form of input?
-                    source_field_name = stitch_directive_arguments[0].value.value
-                    sink_field_name = stitch_directive_arguments[1].value.value
-                    edge = (type_definition.name.value, field_definition.name.value)
-                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
+    base_query_node = QueryNode(query_ast)
+    type_info = TypeInfo(build_ast_schema(merged_schema_descriptor.schema_ast))
+    query_nodes_to_visit = [base_query_node]
 
     # Construct full tree of QueryNodes in a dfs pattern
-    query_nodes_to_visit = [base_query_node]
     while len(query_nodes_to_visit) > 0:
         current_node_to_visit = query_nodes_to_visit.pop()
         # visit will break down the ast included inside current_node_to_visit into potentially
@@ -99,10 +84,63 @@ def split_query(query_ast, merged_schema_descriptor):
     return base_query_node
 
 
+def _get_edge_to_stitch_fields(merged_schema_descriptor):
+    """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
+
+    This is necessary only because graphql currently doesn't process schema directives correctly.
+    Once schema directives are correctly added to GraphQLSchema objects, this part may be
+    removed as directives on a schema field can be directly accessed.
+
+    Args:
+        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing a schema ast
+                                  and a map from names of types to their schema ids
+
+    Returns:
+        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, edge field name) to
+        (source field name, sink field name) used in the @stitch directive, for each cross
+        schema edge
+    """
+    edge_to_stitch_fields = {}
+    for type_definition in merged_schema_descriptor.schema_ast.definitions:
+        if isinstance(type_definition, (
+            ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
+        )):
+            for field_definition in type_definition.fields:
+                stitch_directive = _try_get_ast_with_name_and_type(
+                    field_definition.directives, u'stitch', ast_types.Directive
+                )
+                if stitch_directive is not None:
+                    source_field_name = stitch_directive.arguments[0].value.value
+                    sink_field_name = stitch_directive.arguments[1].value.value
+                    edge = (type_definition.name.value, field_definition.name.value)
+                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
+
+    return edge_to_stitch_fields
+
+
+def _try_get_ast_with_name_and_type(asts, target_name, target_type):
+    """Return the ast with the desired name and type from the list, if found.
+
+    Args:
+        asts: List[Node]
+        target_name: str, name of the AST we're looking for
+        target_type: Node, the type of the AST we're looking for. Must be a type with a .name
+                     attribute, e.g. Field, Directive
+
+    Returns:
+        Node, an element in the input list of ASTs of the correct name and type, or None if
+        no such element exists
+    """
+    # Check there is only one?
+    for ast in asts:
+        if isinstance(ast, target_type):
+            if ast.name.value == target_name:
+                return ast
+    return None
+
+
 class SplitQueryVisitor(Visitor):
     """Prune branches of AST and build tree of QueryNodes while visiting."""
-    # Only visit and prune first level? Stop upon creating a new query node in each branch?
-    # Then recursively visit each child branch again? I like it.
     def __init__(self, type_info, edge_to_stitch_fields, base_query_node):
         """
         Args:
@@ -116,6 +154,11 @@ class SplitQueryVisitor(Visitor):
         self.edge_to_stitch_fields = edge_to_stitch_fields
         self.base_query_node = base_query_node
 
+    # TODO: currently there is no validation nor schema_id in base_query_node, but should
+    # check that every type visited lies inside the correct schema
+    # Check type_info.get_type not get_parent_type, because parent of the base type is
+    # RootSchemaQuery
+
     def enter_Field(self, node, key, parent, path, ancestors):
         """Check for split at the current field.
 
@@ -127,74 +170,51 @@ class SplitQueryVisitor(Visitor):
         will be wrapped in a QueryNode, and added to query_nodes_stack. The rest of the branch
         will not be visited.
         """
-        # source will be used to refer to the type that has the current field
-        # sink will be used to refer to the type that the current field goes to
-        # TODO: use parent/child here?
-        source_type = self.type_info.get_parent_type()  # GraphQLObjectType or GraphQLInterfaceType
+        parent_type = self.type_info.get_parent_type()  # GraphQLObjectType or GraphQLInterfaceType
 
         # Get whether or not there is a stitch here, based on name of the type and field
         # This is only necessary because schemas do not keep track of schema directives
         # correctly. Once that is fixed, TypeInfo should be all that's needed.
-        source_type_name = source_type.name
+        parent_type_name = parent_type.name
         edge_field_name = node.name.value
-        edge_field_descriptor = (source_type_name, edge_field_name)
+        edge_field_descriptor = (parent_type_name, edge_field_name)
 
         if not edge_field_descriptor in self.edge_to_stitch_fields:  # no stitch at this field
             return
 
-        source_field_name, sink_field_name = self.edge_to_stitch_fields[edge_field_descriptor]
+        parent_field_name, child_field_name = self.edge_to_stitch_fields[edge_field_descriptor]
 
         # Get root vertex field name and selection set of the cut off branch of the AST
-        sink_type = self.type_info.get_type()  # GraphQLType, may be wrapped in List or NonNull
+        child_type = self.type_info.get_type()  # GraphQLType, may be wrapped in List or NonNull
         # assert that sink_type is a GraphQLList?
         # NOTE: how does NonNull for sink_type affect anything?
-        while isinstance(sink_type, (GraphQLList, GraphQLNonNull)):
-            sink_type = sink_type.of_type
-        sink_type_name = sink_type.name
-        sink_selection_set = node.selection_set
+        while isinstance(child_type, (GraphQLList, GraphQLNonNull)):
+            child_type = child_type.of_type
+        child_type_name = child_type.name
+        child_selection_set = node.selection_set
 
         # Adjust for type coercion due to the sink_type being an interface or union
         if (
-            len(sink_selection_set.selections) == 1 and
-            isinstance(sink_selection_set.selections[0], ast_types.InlineFragment)
+            len(child_selection_set.selections) == 1 and
+            isinstance(child_selection_set.selections[0], ast_types.InlineFragment)
         ):
-            type_coercion_inline_fragment = sink_selection_set.selections[0]
-            sink_type_name = type_coercion_inline_fragment.type_condition.name.value
-            sink_selection_set = type_coercion_inline_fragment.selection_set
+            type_coercion_inline_fragment = child_selection_set.selections[0]
+            child_type_name = type_coercion_inline_fragment.type_condition.name.value
+            child_selection_set = type_coercion_inline_fragment.selection_set
 
-        # Check for existing field in child
-        sink_field = self._try_get_field_with_name(sink_selection_set.selections, sink_field_name)
-        if sink_field is None:
-            # Add new field to child's selection set
-            sink_field = ast_types.Field(name=ast_types.Name(value=sink_field_name))
-            sink_selection_set.selections.insert(0, sink_field)
-        # Create new AST for the pruned branch
-        branch_query_ast = ast_types.Document(
-            definitions=[
-                ast_types.OperationDefinition(
-                    operation='query',
-                    selection_set=ast_types.SelectionSet(
-                        selections=[
-                            ast_types.Field(
-                                name=ast_types.Name(value=sink_type_name),
-                                selection_set=sink_selection_set,
-                            )
-                        ]
-                    )
-                )
-            ]
+        # Check for existing field in parent and child
+        parent_field = _try_get_ast_with_name_and_type(
+            parent, parent_field_name, ast_types.Field
+        )
+        child_field = _try_get_ast_with_name_and_type(
+            child_selection_set.selections, child_field_name, ast_types.Field
         )
 
-        # Create new QueryNode for pruned branch
-        child_query_node = QueryNode(branch_query_ast)
-
-
-        # Check for existing field in source (self)
-        source_field = self._try_get_field_with_name(parent, source_field_name)
-        if source_field is None:
+        # Process parent field
+        if parent_field is None:
             # Change stump field to source field
             # TODO: deal with preexisting directives
-            node.name.value = source_field_name
+            node.name.value = parent_field_name
             assert(node.alias is None)
             assert(node.arguments is None or node.arguments==[])
             assert(node.directives is None or node.directives==[])
@@ -204,45 +224,52 @@ class SplitQueryVisitor(Visitor):
             # Remove stump field
             parent[key] = None
 
-        # Create QueryConnections
-        # Figure out terminology between source/sink and parent/child
-        new_query_connection_from_source = QueryConnection(
-            sink_query_node=child_query_node,
-            source_field=source_field,
-            sink_field=sink_field,
+        # Process child field
+        if child_field is None:
+            # Add new field to child's selection set
+            child_field = ast_types.Field(name=ast_types.Name(value=child_field_name))
+            child_selection_set.selections.insert(0, child_field)
+
+        # Create child AST for the pruned branch
+        branch_query_ast = ast_types.Document(
+            definitions=[
+                ast_types.OperationDefinition(
+                    operation='query',
+                    selection_set=ast_types.SelectionSet(
+                        selections=[
+                            ast_types.Field(
+                                name=ast_types.Name(value=child_type_name),
+                                selection_set=child_selection_set,
+                            )
+                        ]
+                    )
+                )
+            ]
         )
-        new_query_connection_from_sink = QueryConnection(
+
+        # Create new QueryNode for child AST
+        child_query_node = QueryNode(branch_query_ast)
+
+        # Create QueryConnections
+        new_query_connection_from_parent = QueryConnection(
+            sink_query_node=child_query_node,
+            source_field=parent_field,
+            sink_field=child_field,
+        )
+        new_query_connection_from_child = QueryConnection(
             sink_query_node=self.base_query_node,
-            source_field=sink_field,  # Remarkably confusing
-            sink_field=source_field,
+            source_field=child_field,
+            sink_field=parent_field,
         )
         # NOTE: make sure sink_field and node are correct even if those leaves already existed
 
         # Add QueryConnection to parent and child
-        self.base_query_node.child_query_connections.append(new_query_connection_from_source)
-        child_query_node.parent_query_connection = new_query_connection_from_sink
+        self.base_query_node.child_query_connections.append(new_query_connection_from_parent)
+        child_query_node.parent_query_connection = new_query_connection_from_child
 
         # visit interprets return value of False as skip visiting branch
         # leave_Field will not be called on this field
         return False
-
-    def _try_get_field_with_name(self, selections, target_field_name):
-        """Return the Field with the desired name from the list, if found.
-
-        Args:
-            selections: List[Field or InlineFragment], as found in the selections attribute
-                        of a SelectionSet
-            target_field_name: str, name of the field we're looking for
-
-        Returns:
-            Field, an element in selections of the correct name, or None if no such field exists
-        """
-        for selection in selections:
-            if isinstance(selection, ast_types.Field):
-                if selection.name.value == target_field_name:
-                    return selection
-        return None
-
 
 
 # Ok, conclusion:
