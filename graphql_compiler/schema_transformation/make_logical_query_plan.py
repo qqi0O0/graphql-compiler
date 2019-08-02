@@ -20,9 +20,6 @@ def get_node_by_path(ast, path):
     return target_node
 
 
-
-
-
 # LogicalQueryPlan
 StableQueryNode = namedtuple(
     'StableQueryNode', (
@@ -36,8 +33,8 @@ StableQueryNode = namedtuple(
 OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
         'output_names',  # Tuple[str, str], should be treated as unordered
-#        'is_optional',  # boolean
-# TODO: look into fold and x_count and how to make this interact well with fold
+        # 'is_optional',  # boolean
+        # TODO: look into fold and x_count and how to make this interact well with fold
     )
 )
 
@@ -56,7 +53,7 @@ LogicalQueryPlanDescriptor = namedtuple(
 # such queries don't contain any outputs and are invalid.
 
 
-def stabilize_and_add_directives(query_node): # make_logical_query_plan
+def stabilize_and_add_directives(query_node):  # make_logical_query_plan
     """Return a StableQueryNode, with @filter and @output directives added, along with metadata.
 
     ASTs contained in the input will not be modified.
@@ -64,7 +61,7 @@ def stabilize_and_add_directives(query_node): # make_logical_query_plan
     Returns:
         Tuple[StableQueryNode, Set[str], List[OutputJoinDescriptor]] where the set of strings is
         the set of intermediate outputs that are to be deleted at the end.
-        
+
         Make this a namedtuple?
     """
     intermediate_output_names = set()
@@ -165,7 +162,7 @@ def _get_depth_and_asts_in_dfs_order(stable_query_node):
         asts_in_dfs_order = [(depth, stable_query_node.query_ast)]
         for child_stable_query_node in stable_query_node.child_stable_query_nodes:
             asts_in_dfs_order.extend(
-                _get_depth_and_asts_in_dfs_order_helper(child_stable_query_node, depth+1)
+                _get_depth_and_asts_in_dfs_order_helper(child_stable_query_node, depth + 1)
             )
         return asts_in_dfs_order
     return _get_depth_and_asts_in_dfs_order_helper(stable_query_node, 0)
@@ -186,14 +183,9 @@ def print_query_plan(stable_query_node):
         query_plan += query_str
 
     return query_plan
-
-
-
-
     # @output directives can be attached before order of the tree is known, but @filter and
     # information on what column is put into what filter must come after the order of the tree
     # is known
-
 
 
 def _get_output_directive(out_name):
@@ -220,7 +212,7 @@ def _get_in_collection_filter_directive(input_filter_name):
                 name=ast_types.Name(value='value'),
                 value=ast_types.ListValue(
                     values=[
-                        ast_types.StringValue(value=u'$'+input_filter_name),
+                        ast_types.StringValue(value=u'$' + input_filter_name),
                     ],
                 ),
             ),
