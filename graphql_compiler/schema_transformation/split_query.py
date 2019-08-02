@@ -31,7 +31,7 @@ def get_node_by_path(ast, path):
         if isinstance(key, str):
             target_node = getattr(target_node, key)
         elif isinstance(key, int):
-            target_node = target_node[int]
+            target_node = target_node[key]
         else:
             raise AssertionError(u'')
     return target_node
@@ -100,6 +100,7 @@ def split_query(query_ast, merged_schema_descriptor):
 
 class SplitQueryVisitor(Visitor):
     """Prune branches of AST and build tree of QueryNodes while visiting."""
+    # TODO: record down schema id and check schema id when entering Field or InlineFragment
     def __init__(self, type_info, edge_to_stitch_fields, base_query_node):
         """
         Args:
@@ -299,7 +300,7 @@ StableQueryNode = namedtuple(
 
 OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
-        'output_names',  # [str, str]
+        'output_names',  # Tuple[str, str], should be treated as unordered
 #        'is_optional',  # boolean
     )
 )
@@ -320,23 +321,20 @@ def stabilize_and_add_directives(query_node):
         the set of intermediate outputs that are to be deleted at the end. Make this a
         namedtuple?
     """
-    _output_count = 0
     intermediate_output_names = set()
+    output_join_descriptors = []
+    _output_count = [0]
 
-    def _assign_and_return_output_name(self):
-        output_name = u'__intermediate_output_' + str(_output_count)
-        _output_count += 1
-        return output_name
-
-    # Create a base StableQueryNode
-    base_node = StableQueryNode(
-#        query_ast=copy.deepcopy(query_node.query_ast),
-        # TODO: this is no good, the connecting edge contains the mutable Field object, which
-        # means we can't make a copy of it correctly
-        query_ast=query_node.query_ast,
+    base_stable_query_node = StableQueryNode(
+        query_ast=deepcopy(query_node.query_ast),
         parent_stable_query_node=None,
         child_stable_query_nodes=[],
     )
+
+    def _assign_and_return_output_name():
+        output_name = u'__intermediate_output_' + str(_output_count[0])
+        _output_count[0] += 1
+        return output_name
 
     def _stabilize_and_add_directives_helper(query_node, stable_query_node):
         """Recursively build the structure of query_node onto stable_query_node.
@@ -347,19 +345,27 @@ def stabilize_and_add_directives(query_node):
 
         Modifies the list of children of stable_query_node.
         """
+        parent_query_ast = stable_query_node.query_ast
+
         # Iterate through child connections of query node
         for child_query_connection in query_node.child_query_connections:
             child_query_node = child_query_connection.sink_query_node
-            parent_field = child_query_connection.source_field
-            child_field = child_query_connection.sink_field
+            child_query_ast = deepcopy(child_query_node.query_ast)
+
+            parent_field = get_node_by_path(
+                parent_query_ast, child_query_connection.source_field_path
+            )
+            child_field = get_node_by_path(
+                child_query_ast, child_query_connection.sink_field_path
+            )
 
             # Get existing @output or add @output to parent
             parent_output_directive, _ = _try_get_ast_and_index(
                 parent_field.directives, u'output', ast_types.Directive
             )
             if parent_output_directive is None:
-                # Create and add new directive, edit intermediate_output_names in parent
-                parent_out_name = self._assign_and_return_output_name()
+                # Create and add new directive to field, add to intermediate_output_names
+                parent_out_name = _assign_and_return_output_name()
                 intermediate_output_names.add(parent_out_name)
                 parent_output_directive = _get_output_directive(parent_out_name)
                 parent_field.directives.append(parent_output_directive)
@@ -371,11 +377,13 @@ def stabilize_and_add_directives(query_node):
                 child_field.directives, u'output', ast_types.Directive
             )
             if child_output_directive is None:
-                # Create and add new directive, edit intermediate_output_names in child
-                child_out_name = self._assign_and_return_output_name()
+                # Create and add new directive to field, add to intermediate_output_names
+                child_out_name = _assign_and_return_output_name()
                 intermediate_output_names.add(child_out_name)
                 child_output_directive = _get_output_directive(child_out_name)
                 child_field.directives.append(child_output_directive)
+            else:
+                child_out_name = child_output_directive.arguments[0].value.value
 
             # Add @filter to child
             # Local variable in @filter will be named the same as the parent output
@@ -383,41 +391,57 @@ def stabilize_and_add_directives(query_node):
             child_filter_directive = _get_in_collection_filter_directive(parent_out_name)
             child_field.directives.append(child_filter_directive)
 
-            # Create new StableQueryNode for each child
+            # Create new StableQueryNode for child
+            child_stable_query_node = StableQueryNode(
+                query_ast=child_query_ast,
+                parent_stable_query_node=query_node,
+                child_stable_query_nodes=[],
+            )
 
-            # Add new StableQueryNode to child list
+            # Add new StableQueryNode to parent's child list
+            stable_query_node.child_stable_query_nodes.append(child_stable_query_node)
+
+            # Add information about this edge
+            new_output_join_descriptor = OutputJoinDescriptor(
+                output_names=(parent_out_name, child_out_name),
+            )
+            output_join_descriptors.append(new_output_join_descriptor)
 
             # Recursively repeat on child StableQueryNode
+            _stabilize_and_add_directives_helper(child_query_node, child_stable_query_node)
+
+    _stabilize_and_add_directives_helper(query_node, base_stable_query_node)
+    return (base_stable_query_node, intermediate_output_names, output_join_descriptors)
+
+
+def _get_depth_and_asts_in_dfs_order(stable_query_node):
+    def _get_depth_and_asts_in_dfs_order_helper(stable_query_node, depth):
+        asts_in_dfs_order = [(depth, stable_query_node.query_ast)]
+        for child_stable_query_node in stable_query_node.child_stable_query_nodes:
+            asts_in_dfs_order.extend(
+                _get_depth_and_asts_in_dfs_order_helper(child_stable_query_node, depth+1)
+            )
+        return asts_in_dfs_order
+    return _get_depth_and_asts_in_dfs_order_helper(stable_query_node, 0)
 
 
 def print_query_plan(stable_query_node):
     """Return string describing query plan."""
-    query_plan = u''
-    nodes_in_dfs_order = self.get_nodes_in_dfs_order()
 
-    for node, depth in nodes_in_dfs_order:
+    query_plan = u''
+    depths_and_asts = _get_depth_and_asts_in_dfs_order(stable_query_node)
+
+    for depth, query_ast in depths_and_asts:
         line_separation = u'\n' + u' ' * 8 * depth
         query_plan += line_separation
-        if depth > 0:
-            # Include information about what columns to stitch together
-            # Perhaps include what column to use as input into filter of the same name
-            child_output_name, parent_output_name = _get_source_sink_output_names(
-                node.parent_query_connection
-            )
-            query_plan += u'join (output {}) -> (output {})'.format(
-                parent_output_name, child_output_name
-            )
-            query_plan += line_separation
-        node_query_ast_str = print_ast(node.query_ast)
-        node_query_ast_str = node_query_ast_str.replace(u'\n', line_separation)
-        query_plan += node_query_ast_str
-        all_intermediate_output_names.update(node.intermediate_output_names)
 
-    meta_information = u'\nRemove the following outputs, which were included for internal '\
-                       u'joining use only:\n{}'.format(all_intermediate_output_names)
-    query_plan += meta_information
+        query_str = print_ast(query_ast)
+        query_str = query_str.replace(u'\n', line_separation)
+        query_plan += query_str
 
     return query_plan
+
+
 
 
     # @output directives can be attached before order of the tree is known, but @filter and
