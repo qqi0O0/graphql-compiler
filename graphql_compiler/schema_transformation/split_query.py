@@ -1,11 +1,17 @@
+# Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
 from copy import copy, deepcopy
 
-from graphql import build_ast_schema, print_ast
+from graphql import build_ast_schema
 from graphql.language import ast as ast_types
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
-from graphql.type.definition import GraphQLList, GraphQLNonNull, GraphQLUnionType
+from graphql.type.definition import GraphQLList, GraphQLNonNull
 from graphql.utils.type_info import TypeInfo
+
+from .utils import try_get_ast_and_index
+
+
+# split into two files, one for split query and one for make logical query plan
 
 
 QueryConnection = namedtuple(
@@ -15,18 +21,6 @@ QueryConnection = namedtuple(
         'sink_field_path',  # List[Union[int, str]]
     )
 )
-
-
-def get_node_by_path(ast, path):
-    target_node = ast
-    for key in path:
-        if isinstance(key, str):
-            target_node = getattr(target_node, key)
-        elif isinstance(key, int):
-            target_node = target_node[key]
-        else:
-            raise AssertionError(u'')
-    return target_node
 
 
 class QueryNode(object):
@@ -80,7 +74,7 @@ def split_query(query_ast, merged_schema_descriptor):
         current_node_to_visit = query_nodes_to_visit.pop()
         # visit will break down the ast included inside current_node_to_visit into potentially
         # multiple query nodes, all added to child_query_nodes list of current_node_to_visit
-        split_query_visitor = SplitQueryVisitor(type_info, edge_to_stitch_fields, 
+        split_query_visitor = SplitQueryVisitor(type_info, edge_to_stitch_fields,
                                                 current_node_to_visit)
         visitor = TypeInfoVisitor(type_info, split_query_visitor)
         visit(current_node_to_visit.query_ast, visitor)
@@ -96,14 +90,15 @@ class SplitQueryVisitor(Visitor):
     """Prune branches of AST and build tree of QueryNodes while visiting."""
     # TODO: record down schema id and check schema id when entering Field or InlineFragment
     def __init__(self, type_info, edge_to_stitch_fields, base_query_node):
-        """
+        """Create a QueryNode with one level of children from the visited AST.
+
         The visitor will modify the AST by cutting off branches where stitches occur, and
         modify the base_query_node by creating a QueryNode for every cut-off branch and
         connecting these new QueryNodes to the base_query_node.
 
         Args:
             type_info: TypeInfo
-            edge_to_stitch_fields: Dict[Tuple[str, str], Tuple[str, str]], mapping 
+            edge_to_stitch_fields: Dict[Tuple[str, str], Tuple[str, str]], mapping
                                    (name of type, name of field representing the edge) to
                                    (source field name, sink field name)
             base_query_node: QueryNode, its query_ast and child_query_connections are modified
@@ -121,7 +116,7 @@ class SplitQueryVisitor(Visitor):
         """Check for split at the current field.
 
         If there is a new split at this field as clued by a @stitch directive, a new Document
-        will be created containing the current branch, with a new field 
+        will be created containing the current branch, with a new field
 
         If there is a new split as clued by a @stitch directive, a new Document will be created
         containing the current branch, with some modifications at the root. The new Document
@@ -145,7 +140,7 @@ class SplitQueryVisitor(Visitor):
             self._get_child_root_vertex_field_name_and_selection_set(node)
 
         # Check for existing field in parent
-        parent_field, parent_field_index = _try_get_ast_and_index(
+        parent_field, parent_field_index = try_get_ast_and_index(
             parent, parent_field_name, ast_types.Field
         )
         # Process parent field, and get parent field path
@@ -164,7 +159,7 @@ class SplitQueryVisitor(Visitor):
             parent_field_path[-1] = parent_field_index  # Change last (current node) index
 
         # Check for existing field in child
-        child_field, child_field_index = _try_get_ast_and_index(
+        child_field, child_field_index = try_get_ast_and_index(
             child_selection_set.selections, child_field_name, ast_types.Field
         )
         # Process child field, and get child field path
@@ -177,7 +172,7 @@ class SplitQueryVisitor(Visitor):
             child_selection_set.selections.append(child_field)
             child_field_path = [
                 'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections',
-                len(child_selection_set.selections)-1
+                len(child_selection_set.selections) - 1
             ]
         else:
             child_field_path = [
@@ -206,7 +201,7 @@ class SplitQueryVisitor(Visitor):
         edge_field_name = node.name.value
         edge_field_descriptor = (parent_type_name, edge_field_name)
 
-        if not edge_field_descriptor in self.edge_to_stitch_fields:  # no stitch at this field
+        if edge_field_descriptor not in self.edge_to_stitch_fields:  # no stitch at this field
             return None
 
         return self.edge_to_stitch_fields[edge_field_descriptor]
@@ -285,169 +280,6 @@ class SplitQueryVisitor(Visitor):
         child_query_node.parent_query_connection = new_query_connection_from_child
 
 
-# LogicalQueryPlan
-StableQueryNode = namedtuple(
-    'StableQueryNodes', (
-        'query_ast',  # Document
-        'parent_stable_query_node',  # StableQueryNode
-        'child_stable_query_nodes',  # List[StableQueryNode]
-    )
-)
-
-
-OutputJoinDescriptor = namedtuple(
-    'OutputJoinDescriptor', (
-        'output_names',  # Tuple[str, str], should be treated as unordered
-#        'is_optional',  # boolean
-# TODO: look into fold and x_count and how to make this interact well with fold
-    )
-)
-
-
-# If @output nodes are added only when QueryNodes are turned into StableQueryNodes, then we
-# can't run queries contained in QueryNodes to, say, estimate the size of outputs, because some
-# such queries don't contain any outputs and are invalid.
-
-
-def stabilize_and_add_directives(query_node):
-    """Return a StableQueryNode, with @filter and @output directives added, along with metadata.
-
-    ASTs contained in the input will not be modified.
-
-    Returns:
-        Tuple[StableQueryNode, Set[str], List[OutputJoinDescriptor]] where the set of strings is
-        the set of intermediate outputs that are to be deleted at the end.
-        
-        Make this a namedtuple?
-    """
-    intermediate_output_names = set()
-    output_join_descriptors = []
-    _output_count = [0]
-
-    base_stable_query_node = StableQueryNode(
-        query_ast=deepcopy(query_node.query_ast),
-        parent_stable_query_node=None,
-        child_stable_query_nodes=[],
-    )
-
-    def _assign_and_return_output_name():
-        output_name = u'__intermediate_output_' + str(_output_count[0])
-        _output_count[0] += 1
-        return output_name
-
-    def _stabilize_and_add_directives_helper(query_node, stable_query_node):
-        """Recursively build the structure of query_node onto stable_query_node.
-
-        stable_query_node is assumed to have its parent connections processed. This function
-        will process its child connections and create new StableQueryNodes recursively as
-        needed.
-
-        Modifies the list of children of stable_query_node.
-        """
-        parent_query_ast = stable_query_node.query_ast
-
-        # Iterate through child connections of query node
-        for child_query_connection in query_node.child_query_connections:
-            child_query_node = child_query_connection.sink_query_node
-            child_query_ast = deepcopy(child_query_node.query_ast)
-
-            parent_field = get_node_by_path(
-                parent_query_ast, child_query_connection.source_field_path
-            )
-            child_field = get_node_by_path(
-                child_query_ast, child_query_connection.sink_field_path
-            )
-
-            # Get existing @output or add @output to parent
-            parent_output_directive, _ = _try_get_ast_and_index(
-                parent_field.directives, u'output', ast_types.Directive
-            )
-            if parent_output_directive is None:
-                # Create and add new directive to field, add to intermediate_output_names
-                parent_out_name = _assign_and_return_output_name()
-                intermediate_output_names.add(parent_out_name)
-                parent_output_directive = _get_output_directive(parent_out_name)
-                parent_field.directives.append(parent_output_directive)
-            else:
-                parent_out_name = parent_output_directive.arguments[0].value.value
-
-            # Get existing @output or add @output to child
-            child_output_directive, _ = _try_get_ast_and_index(
-                child_field.directives, u'output', ast_types.Directive
-            )
-            if child_output_directive is None:
-                # Create and add new directive to field, add to intermediate_output_names
-                child_out_name = _assign_and_return_output_name()
-                intermediate_output_names.add(child_out_name)
-                child_output_directive = _get_output_directive(child_out_name)
-                child_field.directives.append(child_output_directive)
-            else:
-                child_out_name = child_output_directive.arguments[0].value.value
-
-            # Add @filter to child
-            # Local variable in @filter will be named the same as the parent output
-            # Only add, don't change existing filters?
-            child_filter_directive = _get_in_collection_filter_directive(parent_out_name)
-            child_field.directives.append(child_filter_directive)
-
-            # Create new StableQueryNode for child
-            child_stable_query_node = StableQueryNode(
-                query_ast=child_query_ast,
-                parent_stable_query_node=query_node,
-                child_stable_query_nodes=[],
-            )
-
-            # Add new StableQueryNode to parent's child list
-            stable_query_node.child_stable_query_nodes.append(child_stable_query_node)
-
-            # Add information about this edge
-            new_output_join_descriptor = OutputJoinDescriptor(
-                output_names=(parent_out_name, child_out_name),
-            )
-            output_join_descriptors.append(new_output_join_descriptor)
-
-            # Recursively repeat on child StableQueryNode
-            _stabilize_and_add_directives_helper(child_query_node, child_stable_query_node)
-
-    _stabilize_and_add_directives_helper(query_node, base_stable_query_node)
-    return (base_stable_query_node, intermediate_output_names, output_join_descriptors)
-
-
-def _get_depth_and_asts_in_dfs_order(stable_query_node):
-    def _get_depth_and_asts_in_dfs_order_helper(stable_query_node, depth):
-        asts_in_dfs_order = [(depth, stable_query_node.query_ast)]
-        for child_stable_query_node in stable_query_node.child_stable_query_nodes:
-            asts_in_dfs_order.extend(
-                _get_depth_and_asts_in_dfs_order_helper(child_stable_query_node, depth+1)
-            )
-        return asts_in_dfs_order
-    return _get_depth_and_asts_in_dfs_order_helper(stable_query_node, 0)
-
-
-def print_query_plan(stable_query_node):
-    """Return string describing query plan."""
-
-    query_plan = u''
-    depths_and_asts = _get_depth_and_asts_in_dfs_order(stable_query_node)
-
-    for depth, query_ast in depths_and_asts:
-        line_separation = u'\n' + u' ' * 8 * depth
-        query_plan += line_separation
-
-        query_str = print_ast(query_ast)
-        query_str = query_str.replace(u'\n', line_separation)
-        query_plan += query_str
-
-    return query_plan
-
-
-
-
-    # @output directives can be attached before order of the tree is known, but @filter and
-    # information on what column is put into what filter must come after the order of the tree
-    # is known
-
-
 def _get_edge_to_stitch_fields(merged_schema_descriptor):
     """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
 
@@ -470,7 +302,7 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
             ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
         )):
             for field_definition in type_definition.fields:
-                stitch_directive, _ = _try_get_ast_and_index(
+                stitch_directive, _ = try_get_ast_and_index(
                     field_definition.directives, u'stitch', ast_types.Directive
                 )
                 if stitch_directive is not None:
@@ -480,69 +312,3 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
                     edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
 
     return edge_to_stitch_fields
-
-
-def _try_get_ast_and_index(asts, target_name, target_type):
-    """Return the ast and its index in the list with the desired name and type, if found.
-
-    Args:
-        asts: List[Node] or None
-        target_name: str, name of the AST we're looking for
-        target_type: Node, the type of the AST we're looking for. Must be a type with a .name
-                     attribute, e.g. Field, Directive
-
-    Returns:
-        Tuple[Node, int], an element in the input list of ASTs of the correct name and type, and
-        the index of this element in the list, if found. If not found, return (None, None)
-    """
-    if asts is None:
-        return (None, None)
-    # Check there is only one?
-    for index, ast in enumerate(asts):
-        if isinstance(ast, target_type):
-            if ast.name.value == target_name:
-                return (ast, index)
-    return (None, None)
-
-
-def _get_output_directive(out_name):
-    return ast_types.Directive(
-        name=ast_types.Name(value=u'output'),
-        arguments=[
-            ast_types.Argument(
-                name=ast_types.Name(value=u'out_name'),
-                value=ast_types.StringValue(value=out_name),
-            ),
-        ],
-    )
-
-
-def _get_in_collection_filter_directive(input_filter_name):
-    return ast_types.Directive(
-        name=ast_types.Name(value=u'filter'),
-        arguments=[
-            ast_types.Argument(
-                name=ast_types.Name(value='op_name'),
-                value=ast_types.StringValue(value='in_collection'),
-            ),
-            ast_types.Argument(
-                name=ast_types.Name(value='value'),
-                value=ast_types.ListValue(
-                    values=[
-                        ast_types.StringValue(value=u'$'+input_filter_name),
-                    ],
-                ),
-            ),
-        ],
-    )
-
-
-# Ok, conclusion:
-# Keep track of set of user output columns, update parent set with union when joining
-# Can also keep track of set of intermediate columns that we assigned
-# Delete all non-user-output columns at the very end
-# Columns have globally unique names
-# Each merging edge keeps track of names of parent and child columns, as well as any additional
-#   information (is optional join, etc)
-# When merging, both columns are kept
-# Fail if merging with both ends being user output?

@@ -1,12 +1,10 @@
 # Copyright 2019-present Kensho Technologies, LLC.
-from collections import OrderedDict
 from textwrap import dedent
 import unittest
 
 from graphql import parse, print_ast
-from graphql.language import ast as ast_types
 from graphql_compiler.schema_transformation.split_query import (
-    split_query, stabilize_and_add_directives, print_query_plan
+    print_query_plan, split_query, stabilize_and_add_directives
 )
 
 from .example_schema import basic_merged_schema
