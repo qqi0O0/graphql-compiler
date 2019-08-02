@@ -1,5 +1,5 @@
 from collections import namedtuple
-import copy
+from copy import copy, deepcopy
 
 from graphql import build_ast_schema, print_ast
 from graphql.language import ast as ast_types
@@ -21,6 +21,8 @@ QueryConnection = namedtuple(
         'sink_field_path',  # List[Union[int, str]]
     )
 )
+# NOTE: using these paths does mean that we can't insert or delete nodes, only append or replace
+# by None
 
 
 def get_node_by_path(ast, path):
@@ -44,7 +46,7 @@ class QueryNode(object):
         # name
         # This will cause issues in a rare edge case, where the parent's output is user defined,
         # and this out_name conflicts with the name of another local variable.
-        
+
     def reroot_tree(self):
         pass
 
@@ -69,7 +71,7 @@ def split_query(query_ast, merged_schema_descriptor):
         QueryNode, the root of the tree of QueryNodes. Each node contains an AST
         representing a part of the overall query, targeting a specific schema
     """
-    # make copy? original ast is definitely modified
+    query_ast = deepcopy(query_ast)
     # If schema directives are correctly represented in the schema object, type_info is all
     # that's needed to detect and address stitching fields. However, before this issue is
     # fixed, it's necessary to use additional information from preprocessing the schema AST
@@ -159,44 +161,48 @@ class SplitQueryVisitor(Visitor):
             child_type_name = type_coercion_inline_fragment.type_condition.name.value
             child_selection_set = type_coercion_inline_fragment.selection_set
 
-        # Check for existing field in parent and child
-        parent_field = _try_get_ast_with_name_and_type(
+        # Check for existing field in parent
+        parent_field, parent_field_index = _try_get_ast_and_index(
             parent, parent_field_name, ast_types.Field
         )
-        child_field = _try_get_ast_with_name_and_type(
-            child_selection_set.selections, child_field_name, ast_types.Field
-        )
-
-        # Get parent and child paths
-        # TODO
-
-        # Process parent field
+        # Process parent field, and get parent field path
         if parent_field is None:
             # Change stump field to source field
-            # TODO: deal with preexisting directives
+            # TODO: process existing directives
             node.name.value = parent_field_name
-            assert(node.alias is None)
-            assert(node.arguments==[])
-            assert(node.directives==[])
             node.selection_set = []
-            parent_field = node
+            parent_field_path = copy(path)
         else:
             # Remove stump field
+            # Can't delete field, since that interferes with both the visitor's traversal and the
+            # field paths in QueryConnections, and thus replace by None
             parent[key] = None
+            parent_field_path = copy(path)
+            parent_field_path[-1] = parent_field_index
 
-        # TODO: deal with None as opposed to empty lists in various places
-
-        # Process child field
+        # Check for existing field in child
+        child_field, child_field_index = _try_get_ast_and_index(
+            child_selection_set.selections, child_field_name, ast_types.Field
+        )
+        # Process child field, and get child field path
         if child_field is None:
-            # Add new field to child's selection set
+            # Add new field to end of child's selection set
             child_field = ast_types.Field(
                 name=ast_types.Name(value=child_field_name),
                 directives=[],
             )
             child_selection_set.selections.append(child_field)
-
+            child_field_path = [
+                'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections',
+                len(child_selection_set.selections)-1
+            ]
+        else:
+            child_field_path = [
+                'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections',
+                child_field_index
+            ]
         # Create child AST for the pruned branch
-        branch_query_ast = ast_types.Document(
+        child_query_ast = ast_types.Document(
             definitions=[
                 ast_types.OperationDefinition(
                     operation='query',
@@ -212,22 +218,21 @@ class SplitQueryVisitor(Visitor):
                 )
             ]
         )
-
         # Create new QueryNode for child AST
-        child_query_node = QueryNode(branch_query_ast)
+        child_query_node = QueryNode(child_query_ast)
 
         # Create QueryConnections
         new_query_connection_from_parent = QueryConnection(
             sink_query_node=child_query_node,
-            source_field=parent_field,
-            sink_field=child_field,
+            source_field_path=parent_field_path,
+            sink_field_path=child_field_path,
         )
         new_query_connection_from_child = QueryConnection(
             sink_query_node=self.base_query_node,
-            source_field=child_field,
-            sink_field=parent_field,
+            source_field_path=child_field_path,
+            sink_field_path=parent_field_path,
         )
-        # NOTE: make sure sink_field and node are correct even if those leaves already existed
+        # TODO: deal with None as opposed to empty lists in various places
 
         # Add QueryConnection to parent and child
         self.base_query_node.child_query_connections.append(new_query_connection_from_parent)
@@ -306,7 +311,7 @@ def stabilize_and_add_directives(query_node):
             child_field = child_query_connection.sink_field
 
             # Get existing @output or add @output to parent
-            parent_output_directive = _try_get_ast_with_name_and_type(
+            parent_output_directive, _ = _try_get_ast_and_index(
                 parent_field.directives, u'output', ast_types.Directive
             )
             if parent_output_directive is None:
@@ -319,7 +324,7 @@ def stabilize_and_add_directives(query_node):
                 parent_out_name = parent_output_directive.arguments[0].value.value
 
             # Get existing @output or add @output to child
-            child_output_directive = _try_get_ast_with_name_and_type(
+            child_output_directive, _ = _try_get_ast_and_index(
                 child_field.directives, u'output', ast_types.Directive
             )
             if child_output_directive is None:
@@ -399,7 +404,7 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
             ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
         )):
             for field_definition in type_definition.fields:
-                stitch_directive = _try_get_ast_with_name_and_type(
+                stitch_directive, _ = _try_get_ast_and_index(
                     field_definition.directives, u'stitch', ast_types.Directive
                 )
                 if stitch_directive is not None:
@@ -411,8 +416,8 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
     return edge_to_stitch_fields
 
 
-def _try_get_ast_with_name_and_type(asts, target_name, target_type):
-    """Return the ast with the desired name and type from the list, if found.
+def _try_get_ast_and_index(asts, target_name, target_type):
+    """Return the ast and its index in the list with the desired name and type, if found.
 
     Args:
         asts: List[Node] or None
@@ -421,17 +426,17 @@ def _try_get_ast_with_name_and_type(asts, target_name, target_type):
                      attribute, e.g. Field, Directive
 
     Returns:
-        Node, an element in the input list of ASTs of the correct name and type, or None if
-        no such element exists
+        Tuple[Node, int], an element in the input list of ASTs of the correct name and type, and
+        the index of this element in the list, if found. If not found, return (None, None)
     """
     if asts is None:
-        return None
+        return (None, None)
     # Check there is only one?
-    for ast in asts:
+    for index, ast in enumerate(asts):
         if isinstance(ast, target_type):
             if ast.name.value == target_name:
-                return ast
-    return None
+                return (ast, index)
+    return (None, None)
 
 
 def _get_output_directive(out_name):
@@ -463,21 +468,6 @@ def _get_in_collection_filter_directive(input_filter_name):
             ),
         ],
     )
-
-
-
-
-
-
-def modify_split_query(query_node):
-    """Add @filter and @output to appropriate fields in query_node and its children.
-
-    Assume at this point the query_node's structure has been established, and @filter
-    directives need to be added to the child in each edge.
-
-    Also fill in information about which @output columns are added for internal joining use,
-    as we traverse through QueryNodes.
-    """
 
 
 # Ok, conclusion:
