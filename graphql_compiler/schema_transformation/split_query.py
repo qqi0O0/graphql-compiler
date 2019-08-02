@@ -118,7 +118,7 @@ class SplitQueryVisitor(Visitor):
     # Check type_info.get_type not get_parent_type, because parent of the base type is
     # RootSchemaQuery
 
-    def enter_Field(self, node, key, parent, path, ancestors):
+    def enter_Field(self, node, key, parent, path, *args):
         """Check for split at the current field.
 
         If there is a new split at this field as clued by a @stitch directive, a new Document
@@ -128,38 +128,22 @@ class SplitQueryVisitor(Visitor):
         containing the current branch, with some modifications at the root. The new Document
         will be wrapped in a QueryNode, and added to query_nodes_stack. The rest of the branch
         will not be visited.
+
+        Args:
+            node: Node
+            key: str
+            parent: List[Union[Field, InlineFragment]], containing all other fields or typ
+                    coercions in this selection
+            path: List[Union[int, str]], listing the attribute names or list indices used to
+                  index into the AST, starting from the root, to reach the current node
         """
-        parent_type = self.type_info.get_parent_type()  # GraphQLObjectType or GraphQLInterfaceType
-
-        # Get whether or not there is a stitch here, based on name of the type and field
-        # This is only necessary because schemas do not keep track of schema directives
-        # correctly. Once that is fixed, TypeInfo should be all that's needed.
-        parent_type_name = parent_type.name
-        edge_field_name = node.name.value
-        edge_field_descriptor = (parent_type_name, edge_field_name)
-
-        if not edge_field_descriptor in self.edge_to_stitch_fields:  # no stitch at this field
+        if self._try_get_stitch_fields(node) is None:
             return
-
-        parent_field_name, child_field_name = self.edge_to_stitch_fields[edge_field_descriptor]
+        parent_field_name, child_field_name = self._try_get_stitch_fields(node)
 
         # Get root vertex field name and selection set of the cut off branch of the AST
-        child_type = self.type_info.get_type()  # GraphQLType, may be wrapped in List or NonNull
-        # assert that sink_type is a GraphQLList?
-        # NOTE: how does NonNull for sink_type affect anything?
-        while isinstance(child_type, (GraphQLList, GraphQLNonNull)):
-            child_type = child_type.of_type
-        child_type_name = child_type.name
-        child_selection_set = node.selection_set
-
-        # Adjust for type coercion due to the sink_type being an interface or union
-        if (
-            len(child_selection_set.selections) == 1 and
-            isinstance(child_selection_set.selections[0], ast_types.InlineFragment)
-        ):
-            type_coercion_inline_fragment = child_selection_set.selections[0]
-            child_type_name = type_coercion_inline_fragment.type_condition.name.value
-            child_selection_set = type_coercion_inline_fragment.selection_set
+        child_type_name, child_selection_set = \
+            self._get_child_root_vertex_field_name_and_selection_set(node)
 
         # Check for existing field in parent
         parent_field, parent_field_index = _try_get_ast_and_index(
@@ -178,7 +162,7 @@ class SplitQueryVisitor(Visitor):
             # field paths in QueryConnections, and thus replace by None
             parent[key] = None
             parent_field_path = copy(path)
-            parent_field_path[-1] = parent_field_index
+            parent_field_path[-1] = parent_field_index  # Change last (current node) index
 
         # Check for existing field in child
         child_field, child_field_index = _try_get_ast_and_index(
@@ -201,16 +185,80 @@ class SplitQueryVisitor(Visitor):
                 'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections',
                 child_field_index
             ]
-        # Create child AST for the pruned branch
-        child_query_ast = ast_types.Document(
+        # Create child AST for the pruned branch, and child QueryNode for the AST
+        child_query_ast = self._create_query_document(child_type_name, child_selection_set)
+        child_query_node = QueryNode(child_query_ast)
+
+        # Create and add QueryConnection to parent and child
+        self._add_query_connections(self.base_query_node, child_query_node, parent_field_path,
+                                    child_field_path)
+        # TODO: deal with None as opposed to empty lists in various places
+
+        # Returning False causes visit to skip visiting the rest of the branch
+        return False
+
+    def _try_get_stitch_fields(self, node):
+        """Return names of parent and child stitch fields, or None if there is no stitch."""
+        # Get whether or not there is a stitch here, based on name of the type and field
+        # This is only necessary because schemas do not keep track of schema directives
+        # correctly. Once that is fixed, TypeInfo should be all that's needed to check for
+        # stitch directives, and edge_to_stitch_fields can be removed.
+        parent_type_name = self.type_info.get_parent_type().name
+        edge_field_name = node.name.value
+        edge_field_descriptor = (parent_type_name, edge_field_name)
+
+        if not edge_field_descriptor in self.edge_to_stitch_fields:  # no stitch at this field
+            return None
+
+        return self.edge_to_stitch_fields[edge_field_descriptor]
+
+    def _get_child_root_vertex_field_name_and_selection_set(self, node):
+        """Get the root field name and selection set of the child AST split at the input node.
+
+        Takes care of type coercion, so the root field name will be the coerced type rather than
+        a, say, union type, and the selection set will contain real fields rather than a single
+        inline fragment.
+
+        node must be the node that the visitor is currently on, to ensure that self.type_info
+        matches up with node.
+
+        Args:
+            node: Node
+
+        Returns:
+            Tuple[str, SelectionSet], name and selection set of the child branch of the AST
+            cut off at node.
+        """
+        child_type = self.type_info.get_type()  # GraphQLType, may be wrapped in List or NonNull
+        # assert that sink_type is a GraphQLList?
+        # NOTE: how does NonNull for sink_type affect anything?
+        while isinstance(child_type, (GraphQLList, GraphQLNonNull)):
+            child_type = child_type.of_type
+        child_type_name = child_type.name
+        child_selection_set = node.selection_set
+
+        # Adjust for type coercion due to the sink_type being an interface or union
+        if (
+            len(child_selection_set.selections) == 1 and
+            isinstance(child_selection_set.selections[0], ast_types.InlineFragment)
+        ):
+            type_coercion_inline_fragment = child_selection_set.selections[0]
+            child_type_name = type_coercion_inline_fragment.type_condition.name.value
+            child_selection_set = type_coercion_inline_fragment.selection_set
+
+        return (child_type_name, child_selection_set)
+
+    def _create_query_document(self, root_vertex_field_name, root_selection_set):
+        """Return a Document representing a query with the specified name and selection set."""
+        return ast_types.Document(
             definitions=[
                 ast_types.OperationDefinition(
                     operation='query',
                     selection_set=ast_types.SelectionSet(
                         selections=[
                             ast_types.Field(
-                                name=ast_types.Name(value=child_type_name),
-                                selection_set=child_selection_set,
+                                name=ast_types.Name(value=root_vertex_field_name),
+                                selection_set=root_selection_set,
                                 directives=[],
                             )
                         ]
@@ -218,9 +266,10 @@ class SplitQueryVisitor(Visitor):
                 )
             ]
         )
-        # Create new QueryNode for child AST
-        child_query_node = QueryNode(child_query_ast)
 
+    def _add_query_connections(self, parent_query_node, child_query_node, parent_field_path,
+                               child_field_path):
+        """Modify parent and child QueryNodes by adding appropriate QueryConnections."""
         # Create QueryConnections
         new_query_connection_from_parent = QueryConnection(
             sink_query_node=child_query_node,
@@ -232,15 +281,9 @@ class SplitQueryVisitor(Visitor):
             source_field_path=child_field_path,
             sink_field_path=parent_field_path,
         )
-        # TODO: deal with None as opposed to empty lists in various places
-
-        # Add QueryConnection to parent and child
-        self.base_query_node.child_query_connections.append(new_query_connection_from_parent)
+        # Add QueryConnections
+        parent_query_node.child_query_connections.append(new_query_connection_from_parent)
         child_query_node.parent_query_connection = new_query_connection_from_child
-
-        # visit interprets return value of False as skip visiting branch
-        # leave_Field will not be called on this field
-        return False
 
 
 # Does this really need to be so structured? We can just have a list of pairs of strings, each
