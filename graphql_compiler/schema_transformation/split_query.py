@@ -1,4 +1,5 @@
 from collections import namedtuple
+import copy
 
 from graphql import build_ast_schema, print_ast
 from graphql.language import ast as ast_types
@@ -20,18 +21,10 @@ FlexibleQueryConnection = namedtuple(
         'sink_field',  # Field
     )
 )
-
-
-StableQueryConnection = namedtuple(
-    'StableQueryConnection', (
-        'parent_stable_query_node',  # StableQueryNode
-        'child_stable_query_node',  # StableQueryNode
-        'parent_output_name',  # str
-        'child_output_name',  # str
-    )
-)
-
-
+# TODO: keeping track of the fields is bad because I can no longer make copies. Instead, keep
+# track of their paths
+# From AST and path, can recover AST component by doing getattr and subscriptions (can write
+# helper for this)
 
 
 # Need observer like query plan. Query plan needs to include information on what columns to
@@ -128,11 +121,110 @@ def split_query(query_ast, merged_schema_descriptor):
 StableQueryNode = namedtuple(
     'StableQueryNodes', (
         'query_ast',  # Document
-        'parent_stable_query_connection',  # StableQueryNode
-        'child_stable_query_connections',  # List[StableQueryNode]
+        'parent_stable_query_node',  # StableQueryNode
+        'child_stable_query_nodes',  # List[StableQueryNode]
     )
 )
 
+
+OutputJoinDescriptor = namedtuple(
+    'OutputJoinDescriptor', (
+        'output_names',  # [str, str]
+#        'is_optional',  # boolean
+    )
+)
+
+
+# in which step is the output directive added? If add in step 2, then can't run nodes of step
+# 1 because some queries lack @output and are invalid
+# worry about this later
+
+
+def stabilize_and_add_directives(query_node):
+    """Return a StableQueryNode, with @filter and @output directives added, along with metadata.
+
+    ASTs contained in the input will not be modified.
+
+    Returns:
+        Tuple[StableQueryNode, Set[str], List[OutputJoinDescriptor]] where the set of strings is
+        the set of intermediate outputs that are to be deleted at the end. Make this a
+        namedtuple?
+    """
+    _output_count = 0
+    intermediate_output_names = set()
+
+    def _assign_and_return_output_name(self):
+        output_name = u'__intermediate_output_' + str(_output_count)
+        _output_count += 1
+        return output_name
+
+    # Create a base StableQueryNode
+    base_node = StableQueryNode(
+#        query_ast=copy.deepcopy(query_node.query_ast),
+        # TODO: this is no good, the connecting edge contains the mutable Field object, which
+        # means we can't make a copy of it correctly
+        query_ast=query_node.query_ast,
+        parent_stable_query_node=None,
+        child_stable_query_nodes=[],
+    )
+
+    def _stabilize_and_add_directives_helper(query_node, stable_query_node):
+        """Recursively build the structure of query_node onto stable_query_node.
+
+        stable_query_node is assumed to have its parent connections processed. This function
+        will process its child connections and create new StableQueryNodes recursively as
+        needed.
+
+        Modifies the list of children of stable_query_node.
+        """
+        # Iterate through child connections of query node
+        for child_query_connection in query_node.child_query_connections:
+            child_query_node = child_query_connection.sink_query_node
+            parent_field = child_query_connection.source_field
+            child_field = child_query_connection.sink_field
+
+            # Get existing @output or add @output to parent
+            parent_output_directive = _try_get_ast_with_name_and_type(
+                parent_field.directives, u'output', ast_types.Directive
+            )
+            if parent_output_directive is None:
+                # Create and add new directive, edit intermediate_output_names in parent
+                parent_out_name = self._assign_and_return_output_name()
+                intermediate_output_names.add(parent_out_name)
+                parent_output_directive = _get_output_directive(parent_out_name)
+                parent_field.directives.append(parent_output_directive)
+            else:
+                parent_out_name = parent_output_directive.arguments[0].value.value
+
+            # Get existing @output or add @output to child
+            child_output_directive = _try_get_ast_with_name_and_type(
+                child_field.directives, u'output', ast_types.Directive
+            )
+            if child_output_directive is None:
+                # Create and add new directive, edit intermediate_output_names in child
+                child_out_name = self._assign_and_return_output_name()
+                intermediate_output_names.add(child_out_name)
+                child_output_directive = _get_output_directive(child_out_name)
+                child_field.directives.append(child_output_directive)
+
+            # Add @filter to child
+            # Local variable in @filter will be named the same as the parent output
+            # Only add, don't change existing filters?
+            child_filter_directive = _get_in_collection_filter_directive(parent_out_name)
+            child_field.directives.append(child_filter_directive)
+
+            # Create new StableQueryNode for each child
+
+        # The parent being called will add @filter and @output to self.query_ast's connecting
+        # field, potentially put an element into self.intermediate_output_names, and will
+        # set self.input_filter_name.
+        for child_query_connection in self.child_query_connections:
+
+
+
+
+            # Recursively add directives to children
+            child_query_node.add_output_and_filter_directives()
 
 
 def print_query_plan(stable_query_node):
