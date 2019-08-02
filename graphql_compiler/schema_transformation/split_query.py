@@ -76,54 +76,93 @@ class QueryNode(object):
         pass
 
 
+def split_query(query_ast, merged_schema_descriptor):
+    """Split input query AST into a tree of QueryNodes targeting each individual schema.
+
+    Additional @output and @filter directives will not be added in this step. Fields that make
+    up the stitch will be added if necessary. The connection between QueryNodes will contain
+    those fields used in stitching, so that they can easily be modified to include more
+    directives.
+
+    Args:
+        query_ast: Document, representing a GraphQL query to split
+        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing:
+                                  schema_ast: Document representing the merged schema
+                                  type_name_to_schema_id: Dict[str, str], mapping name of each
+                                                          type to the id of the schema it came
+                                                          from
+
+    Returns:
+        QueryNode, the root of the tree of QueryNodes. Each node contains an AST
+        representing a part of the overall query, targeting a specific schema
+    """
+    # make copy? original ast is definitely modified
+    # If schema directives are correctly represented in the schema object, type_info is all
+    # that's needed to detect and address stitching fields. However, before this issue is
+    # fixed, it's necessary to use additional information from preprocessing the schema AST
+    edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
+
+    base_query_node = QueryNode(query_ast)
+    type_info = TypeInfo(build_ast_schema(merged_schema_descriptor.schema_ast))
+    query_nodes_to_visit = [base_query_node]
+
+    # Construct full tree of QueryNodes in a dfs pattern
+    while len(query_nodes_to_visit) > 0:
+        current_node_to_visit = query_nodes_to_visit.pop()
+        # visit will break down the ast included inside current_node_to_visit into potentially
+        # multiple query nodes, all added to child_query_nodes list of current_node_to_visit
+        split_query_visitor = SplitQueryVisitor(type_info, edge_to_stitch_fields, 
+                                                current_node_to_visit)
+        visitor = TypeInfoVisitor(type_info, split_query_visitor)
+        visit(current_node_to_visit.query_ast, visitor)
+        query_nodes_to_visit.extend(
+            child_query_connection.sink_query_node
+            for child_query_connection in current_node_to_visit.child_query_connections
+        )
+
+    return base_query_node
+
+
 # Does this really need to be so structured? We can just have a list of pairs of strings, each
 # pair describing the names of two columns that need to be stitched
-class StableQueryNode(object):
-    def __init__(self, query_ast):
-        self.query_ast = query_ast
-        self.parent_stable_query_connection = None
-        self.child_stable_query_connection = []
-        self.intermediate_output_names = set()
+StableQueryNode = namedtuple(
+    'StableQueryNodes', (
+        'query_ast',  # Document
+        'parent_stable_query_connection',  # StableQueryNode
+        'child_stable_query_connections',  # List[StableQueryNode]
+    )
+)
 
-    def get_nodes_in_dfs_order(self):
-        return self._get_nodes_in_dfs_order_helper(0)
 
-    def _get_nodes_in_dfs_order_helper(self, depth):
-        nodes_in_dfs_order = [(self, depth)]
-        for child_query_connection in self.child_query_connections:
-            child_query_node = child_query_connection.sink_query_node
-            nodes_in_dfs_order.extend(child_query_node._get_nodes_in_dfs_order_helper(depth+1))
-        return nodes_in_dfs_order
 
-    def print_query_plan(self):
-        """Return string describing query plan."""
-        all_intermediate_output_names = set()
-        query_plan = u''
-        nodes_in_dfs_order = self.get_nodes_in_dfs_order()
+def print_query_plan(stable_query_node):
+    """Return string describing query plan."""
+    query_plan = u''
+    nodes_in_dfs_order = self.get_nodes_in_dfs_order()
 
-        for node, depth in nodes_in_dfs_order:
-            line_separation = u'\n' + u' ' * 8 * depth
+    for node, depth in nodes_in_dfs_order:
+        line_separation = u'\n' + u' ' * 8 * depth
+        query_plan += line_separation
+        if depth > 0:
+            # Include information about what columns to stitch together
+            # Perhaps include what column to use as input into filter of the same name
+            child_output_name, parent_output_name = _get_source_sink_output_names(
+                node.parent_query_connection
+            )
+            query_plan += u'join (output {}) -> (output {})'.format(
+                parent_output_name, child_output_name
+            )
             query_plan += line_separation
-            if depth > 0:
-                # Include information about what columns to stitch together
-                # Perhaps include what column to use as input into filter of the same name
-                child_output_name, parent_output_name = _get_source_sink_output_names(
-                    node.parent_query_connection
-                )
-                query_plan += u'join (output {}) -> (output {})'.format(
-                    parent_output_name, child_output_name
-                )
-                query_plan += line_separation
-            node_query_ast_str = print_ast(node.query_ast)
-            node_query_ast_str = node_query_ast_str.replace(u'\n', line_separation)
-            query_plan += node_query_ast_str
-            all_intermediate_output_names.update(node.intermediate_output_names)
+        node_query_ast_str = print_ast(node.query_ast)
+        node_query_ast_str = node_query_ast_str.replace(u'\n', line_separation)
+        query_plan += node_query_ast_str
+        all_intermediate_output_names.update(node.intermediate_output_names)
 
-        meta_information = u'\nRemove the following outputs, which were included for internal '\
-                           u'joining use only:\n{}'.format(all_intermediate_output_names)
-        query_plan += meta_information
+    meta_information = u'\nRemove the following outputs, which were included for internal '\
+                       u'joining use only:\n{}'.format(all_intermediate_output_names)
+    query_plan += meta_information
 
-        return query_plan
+    return query_plan
 
 
 
@@ -185,23 +224,6 @@ def add_output_and_filter_directives(query_node):
         child_query_node.add_output_and_filter_directives()
 
 
-
-
-
-
-def _get_source_sink_output_names(query_connection):
-    fields = (query_connection.source_field, query_connection.sink_field)
-    output_names = []
-    for field in fields:
-        output_directive = _try_get_ast_with_name_and_type(
-            field.directives, u'output', ast_types.Directive
-        )
-        assert(output_directive is not None)
-        output_name = output_directive.arguments[0].value.value
-        output_names.append(output_name)
-    return tuple(output_names)
-
-
     # putting in new directives and recording information about input filter name and so on
     # still happens on QueryNode
 
@@ -217,51 +239,7 @@ def _get_source_sink_output_names(query_connection):
     # is known
 
 
-def split_query(query_ast, merged_schema_descriptor):
-    """Split input query AST into a tree of QueryNodes targeting each individual schema.
 
-    Additional @output and @filter directives will not be added in this step. Fields that make
-    up the stitch will be added if necessary. The connection between QueryNodes will contain
-    those fields used in stitching, so that they can easily be modified to include more
-    directives.
-
-    Args:
-        query_ast: Document, representing a GraphQL query to split
-        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing:
-                                  schema_ast: Document representing the merged schema
-                                  type_name_to_schema_id: Dict[str, str], mapping name of each
-                                                          type to the id of the schema it came
-                                                          from
-
-    Returns:
-        QueryNode, the root of the tree of QueryNodes. Each node contains an AST
-        representing a part of the overall query, targeting a specific schema
-    """
-    # make copy? original ast is definitely modified
-    # If schema directives are correctly represented in the schema object, type_info is all
-    # that's needed to detect and address stitching fields. However, before this issue is
-    # fixed, it's necessary to use additional information from preprocessing the schema AST
-    edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
-
-    base_query_node = QueryNode(query_ast)
-    type_info = TypeInfo(build_ast_schema(merged_schema_descriptor.schema_ast))
-    query_nodes_to_visit = [base_query_node]
-
-    # Construct full tree of QueryNodes in a dfs pattern
-    while len(query_nodes_to_visit) > 0:
-        current_node_to_visit = query_nodes_to_visit.pop()
-        # visit will break down the ast included inside current_node_to_visit into potentially
-        # multiple query nodes, all added to child_query_nodes list of current_node_to_visit
-        split_query_visitor = SplitQueryVisitor(type_info, edge_to_stitch_fields, 
-                                                current_node_to_visit)
-        visitor = TypeInfoVisitor(type_info, split_query_visitor)
-        visit(current_node_to_visit.query_ast, visitor)
-        query_nodes_to_visit.extend(
-            child_query_connection.sink_query_node
-            for child_query_connection in current_node_to_visit.child_query_connections
-        )
-
-    return base_query_node
 
 
 def _get_edge_to_stitch_fields(merged_schema_descriptor):
