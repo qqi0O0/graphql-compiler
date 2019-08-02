@@ -8,12 +8,6 @@ from graphql.type.definition import GraphQLList, GraphQLNonNull, GraphQLUnionTyp
 from graphql.utils.type_info import TypeInfo
 
 
-# Break down into two steps, one for splitting the tree with minimum modifications (just adding
-# the type on the outermost scope) and keeping track of connecting edge information, one for
-# modifying the split tree with appropriate @filter and @output directives
-# The second step will also need to keep track of what actual user outputs are
-
-
 QueryConnection = namedtuple(
     'QueryConnection', (
         'sink_query_node',  # QueryNode
@@ -21,8 +15,6 @@ QueryConnection = namedtuple(
         'sink_field_path',  # List[Union[int, str]]
     )
 )
-# NOTE: using these paths does mean that we can't insert or delete nodes, only append or replace
-# by None
 
 
 def get_node_by_path(ast, path):
@@ -46,8 +38,10 @@ class QueryNode(object):
         # name
         # This will cause issues in a rare edge case, where the parent's output is user defined,
         # and this out_name conflicts with the name of another local variable.
+        # That's ok. Document this and all is well.
 
     def reroot_tree(self):
+        # Prevent flipping optional edges
         pass
 
 
@@ -103,6 +97,10 @@ class SplitQueryVisitor(Visitor):
     # TODO: record down schema id and check schema id when entering Field or InlineFragment
     def __init__(self, type_info, edge_to_stitch_fields, base_query_node):
         """
+        The visitor will modify the AST by cutting off branches where stitches occur, and
+        modify the base_query_node by creating a QueryNode for every cut-off branch and
+        connecting these new QueryNodes to the base_query_node.
+
         Args:
             type_info: TypeInfo
             edge_to_stitch_fields: Dict[Tuple[str, str], Tuple[str, str]], mapping 
@@ -287,8 +285,7 @@ class SplitQueryVisitor(Visitor):
         child_query_node.parent_query_connection = new_query_connection_from_child
 
 
-# Does this really need to be so structured? We can just have a list of pairs of strings, each
-# pair describing the names of two columns that need to be stitched
+# LogicalQueryPlan
 StableQueryNode = namedtuple(
     'StableQueryNodes', (
         'query_ast',  # Document
@@ -302,13 +299,14 @@ OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
         'output_names',  # Tuple[str, str], should be treated as unordered
 #        'is_optional',  # boolean
+# TODO: look into fold and x_count and how to make this interact well with fold
     )
 )
 
 
-# in which step is the output directive added? If add in step 2, then can't run nodes of step
-# 1 because some queries lack @output and are invalid
-# worry about this later
+# If @output nodes are added only when QueryNodes are turned into StableQueryNodes, then we
+# can't run queries contained in QueryNodes to, say, estimate the size of outputs, because some
+# such queries don't contain any outputs and are invalid.
 
 
 def stabilize_and_add_directives(query_node):
@@ -318,8 +316,9 @@ def stabilize_and_add_directives(query_node):
 
     Returns:
         Tuple[StableQueryNode, Set[str], List[OutputJoinDescriptor]] where the set of strings is
-        the set of intermediate outputs that are to be deleted at the end. Make this a
-        namedtuple?
+        the set of intermediate outputs that are to be deleted at the end.
+        
+        Make this a namedtuple?
     """
     intermediate_output_names = set()
     output_join_descriptors = []
@@ -516,6 +515,7 @@ def _get_output_directive(out_name):
             ),
         ],
     )
+
 
 def _get_in_collection_filter_directive(input_filter_name):
     return ast_types.Directive(

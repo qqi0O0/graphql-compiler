@@ -13,6 +13,7 @@ from .example_schema import basic_merged_schema
 
 
 class TestSplitQuery(unittest.TestCase):
+    # TODO: change to using standard test schemas
     # Add tests for interface and union
     # Proper way to test this is to test observers (query plan, etc)
     # Test original unmodified
@@ -253,7 +254,8 @@ class TestModifySplitQuery(unittest.TestCase):
         query_node = split_query(parse(query_str), basic_merged_schema)
         stable_query_node, intermediate_outputs, connections = \
             stabilize_and_add_directives(query_node)
-        print(print_ast(query_node.query_ast))
+        
+        print(query_str)
         print(print_query_plan(stable_query_node))
         print(intermediate_outputs)
         print(connections)
