@@ -8,10 +8,8 @@ from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.type.definition import GraphQLList, GraphQLNonNull
 from graphql.utils.type_info import TypeInfo
 
+from ..compiler.helpers import INBOUND_EDGE_DIRECTION, OUTBOUND_EDGE_DIRECTION
 from .utils import try_get_ast_and_index
-
-
-# split into two files, one for split query and one for make logical query plan
 
 
 QueryConnection = namedtuple(
@@ -25,48 +23,56 @@ QueryConnection = namedtuple(
 
 class QueryNode(object):
     def __init__(self, query_ast):  # schema_id?
+        """Represents one piece of a larger query, targeting one schema.
+
+        Args:
+            query_ast: Document, representing one piece of a query
+        """
         self.query_ast = query_ast
+        self.schema_id = None  # str, identifying the schema that this query targets
         self.parent_query_connection = None
+        # QueryNode or None, the query that the current query depends on
         self.child_query_connections = []
-        # probably ok to just have input_filter_name be equal to the parent's output column
-        # name
-        # This will cause issues in a rare edge case, where the parent's output is user defined,
-        # and this out_name conflicts with the name of another local variable.
-        # That's ok. Document this and all is well.
+        # List[QueryNode], the queries that depend on the current query
 
     def reroot_tree(self):
         # Prevent flipping optional edges
         pass
 
 
-def split_query(query_ast, merged_schema_descriptor):
+def split_query(query_ast, merged_schema, type_name_to_schema_id, cross_schema_edges):
     """Split input query AST into a tree of QueryNodes targeting each individual schema.
 
     Additional @output and @filter directives will not be added in this step. Fields that make
     up the stitch will be added if necessary. The connection between QueryNodes will contain
-    those fields used in stitching, so that they can easily be modified to include more
-    directives.
+    the path to get those fields used in stitching, so that they can be modified to include
+    more directives.
 
     Args:
-        query_ast: Document, representing a GraphQL query to split
-        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing:
-                                  schema_ast: Document representing the merged schema
-                                  type_name_to_schema_id: Dict[str, str], mapping name of each
-                                                          type to the id of the schema it came
-                                                          from
+        query_ast: Document, representing a GraphQL query to split, not modified by this
+                   function
+        merged_schema: GraphQLSchema, representing the merged schema object that the input
+                       query is splitting against
+        type_name_to_schema_id: Dict[str, str], mapping the name of each type to the id of
+                                the schema that the type came from, as in the
+                                type_name_to_schema_id attribute in the output MergedSchema
+                                namedtuple of the function merge_schemas
+        cross_schema_edges: List[CrossSchemaEdgeDescriptor], must be identical to the list of
+                            CrossSchemaEdgeDescriptors used to generate the merged_schema.
+                            This parameter is only needed because of a GraphQL issue where
+                            schemas do not keep track of schema directives, and thus we need
+                            some other way of keeping track of where the @stitch directives
+                            occur. Once this GraphQL issue is resolved, this can be removed
 
     Returns:
         QueryNode, the root of the tree of QueryNodes. Each node contains an AST
         representing a part of the overall query, targeting a specific schema
     """
     query_ast = deepcopy(query_ast)
-    # If schema directives are correctly represented in the schema object, type_info is all
-    # that's needed to detect and address stitching fields. However, before this issue is
-    # fixed, it's necessary to use additional information from preprocessing the schema AST
-    edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
+    edge_to_stitch_fields = _get_edge_to_stitch_fields(cross_schema_edges)
 
     base_query_node = QueryNode(query_ast)
-    type_info = TypeInfo(build_ast_schema(merged_schema_descriptor.schema_ast))
+    type_info = TypeInfo(merged_schema)  # Used to keep track of types while visiting query
     query_nodes_to_visit = [base_query_node]
 
     # Construct full tree of QueryNodes in a dfs pattern
@@ -74,6 +80,7 @@ def split_query(query_ast, merged_schema_descriptor):
         current_node_to_visit = query_nodes_to_visit.pop()
         # visit will break down the ast included inside current_node_to_visit into potentially
         # multiple query nodes, all added to child_query_nodes list of current_node_to_visit
+        # TODO add in the type_name_to_schema_id
         split_query_visitor = SplitQueryVisitor(type_info, edge_to_stitch_fields,
                                                 current_node_to_visit)
         visitor = TypeInfoVisitor(type_info, split_query_visitor)
@@ -131,13 +138,15 @@ class SplitQueryVisitor(Visitor):
             path: List[Union[int, str]], listing the attribute names or list indices used to
                   index into the AST, starting from the root, to reach the current node
         """
-        if self._try_get_stitch_fields(node) is None:
-            return
-        parent_field_name, child_field_name = self._try_get_stitch_fields(node)
-
-        # Get root vertex field name and selection set of the cut off branch of the AST
+        # Get root vertex field name and selection set of current branch of the AST
         child_type_name, child_selection_set = \
             self._get_child_root_vertex_field_name_and_selection_set(node)
+
+        if self._try_get_stitch_fields(node) is None:
+            # Check or set schema id
+            # TODO
+            return
+        parent_field_name, child_field_name = self._try_get_stitch_fields(node)
 
         # Check for existing field in parent
         parent_field, parent_field_index = try_get_ast_and_index(
@@ -146,7 +155,7 @@ class SplitQueryVisitor(Visitor):
         # Process parent field, and get parent field path
         if parent_field is None:
             # Change stump field to source field
-            # TODO: process existing directives
+            # TODO: process existing directives, especially @optional and @fold
             node.name.value = parent_field_name
             node.selection_set = []
             parent_field_path = copy(path)
@@ -205,6 +214,16 @@ class SplitQueryVisitor(Visitor):
             return None
 
         return self.edge_to_stitch_fields[edge_field_descriptor]
+
+    def _check_or_set_schema_id(self, type_name):
+        """Set the schema id of the base node if not yet set, otherwise check schema ids agree.
+
+        Args:
+            type_name: str, name of the type those schema id we're comparing against the
+                       current schema id, if any
+        """
+        current_type_schema_id = self.
+        current_target_type_schema_id = self.
 
     def _get_child_root_vertex_field_name_and_selection_set(self, node):
         """Get the root field name and selection set of the child AST split at the input node.
@@ -279,8 +298,13 @@ class SplitQueryVisitor(Visitor):
         parent_query_node.child_query_connections.append(new_query_connection_from_parent)
         child_query_node.parent_query_connection = new_query_connection_from_child
 
+    def leave_Document(self, node, *args):
+        # Confirm that schema_id has been filled in
+        if self.base_query_node.schema_id is None:
+            raise AssertionError(u'')
 
-def _get_edge_to_stitch_fields(merged_schema_descriptor):
+
+def _get_edge_to_stitch_fields(cross_schema_edges):
     """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
 
     This is necessary only because graphql currently doesn't process schema directives correctly.
@@ -288,8 +312,7 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
     removed as directives on a schema field can be directly accessed.
 
     Args:
-        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing a schema ast
-                                  and a map from names of types to their schema ids
+        cross_schema_edges: List[CrossSchemaEdgeDescriptor]
 
     Returns:
         Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, edge field name) to
@@ -297,18 +320,18 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
         schema edge
     """
     edge_to_stitch_fields = {}
-    for type_definition in merged_schema_descriptor.schema_ast.definitions:
-        if isinstance(type_definition, (
-            ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
-        )):
-            for field_definition in type_definition.fields:
-                stitch_directive, _ = try_get_ast_and_index(
-                    field_definition.directives, u'stitch', ast_types.Directive
-                )
-                if stitch_directive is not None:
-                    source_field_name = stitch_directive.arguments[0].value.value
-                    sink_field_name = stitch_directive.arguments[1].value.value
-                    edge = (type_definition.name.value, field_definition.name.value)
-                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
+    for cross_schema_edge in cross_schema_edge_descriptors:
+        out_field_reference = cross_schema_edge.outbound_field_reference
+        in_field_reference = cross_schema_edge.inbound_field_reference
+        edge_name = cross_schema_edge.edge_name
+
+        out_edge_field_name = OUTBOUND_EDGE_DIRECTION + '_' + edge_name
+        edge_to_stitch_fields[(out_field_reference.type_name, out_edge_field_name)] = \
+            (out_field_reference.field_name, in_field_reference.field_name)
+
+        if not cross_schema_edge.out_edge_only:
+            in_edge_field_name = INBOUND_EDGE_DIRECTION + '_' + edge_name
+            edge_to_stitch_fields[(in_field_reference.type_name, in_edge_field_name)] = \
+                (in_field_reference.field_name, out_field_reference.field_name)
 
     return edge_to_stitch_fields
