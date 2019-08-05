@@ -5,59 +5,43 @@ from graphql import parse
 from graphql_compiler.schema_transformation.merge_schemas import (
     CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
 )
+from ..test_helpers import SCHEMA_TEXT
 
 
-schema1 = '''
+additional_schema = '''
 schema {
   query: SchemaQuery
 }
 
-type Human {
-  name: String
-  friend: Human
-  id: String
-}
-
-type SchemaQuery {
-  Human: Human
-}
-
-directive @output(out_name: String) on FIELD
-'''
-
-schema2 = '''
-schema {
-  query: SchemaQuery
-}
-
-type Person {
+type Creature {
+  creature_name: String
   age: Int
-  enemy: Person
-  identifier: String
+  out_Creature_ParentOf: [Creature]
 }
 
 type SchemaQuery {
-  Person: Person
+  Creature: Creature
 }
 '''
+
 
 basic_merged_schema = merge_schemas(
     OrderedDict([
-        ('first', parse(schema1)),
-        ('second', parse(schema2)),
+        ('first', parse(SCHEMA_TEXT)),
+        ('second', parse(additional_schema)),
     ]),
     [
         CrossSchemaEdgeDescriptor(
-            edge_name='Human_Person',
+            edge_name='Animal_Creature',
             outbound_field_reference=FieldReference(
                 schema_id='first',
-                type_name='Human',
-                field_name='id',
+                type_name='Animal',
+                field_name='name',
             ),
             inbound_field_reference=FieldReference(
                 schema_id='second',
-                type_name='Person',
-                field_name='identifier'
+                type_name='Creature',
+                field_name='creature_name'
             ),
             out_edge_only=False,
         ),
