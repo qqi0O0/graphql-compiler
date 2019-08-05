@@ -2,7 +2,7 @@
 from textwrap import dedent
 import unittest
 
-from graphql import parse
+from graphql import parse, print_schema
 from graphql.language.printer import print_ast
 from graphql.language.visitor_meta import QUERY_DOCUMENT_KEYS
 
@@ -53,6 +53,10 @@ class TestRenameSchema(unittest.TestCase):
         original_ast = parse(ISS.basic_schema)
         rename_schema(original_ast, {'Human': 'NewHuman'})
         self.assertEqual(original_ast, parse(ISS.basic_schema))
+
+    def test_schema_identical_to_ast(self):
+        renamed_schema = rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
+        self.assertEqual(print_schema(renamed_schema.schema), print_ast(renamed_schema.schema_ast))
 
     def test_swap_rename(self):
         renamed_schema = rename_schema(parse(ISS.multiple_objects_schema),
