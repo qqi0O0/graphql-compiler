@@ -6,8 +6,9 @@ from graphql import parse, print_ast
 from graphql_compiler.schema_transformation.split_query import (
     split_query
 )
+from graphql_compiler.exceptions import GraphQLValidationError
 
-from .example_schema import basic_merged_schema
+from .example_schema import basic_merged_schema, interface_merged_schema
 
 
 class TestSplitQuery(unittest.TestCase):
@@ -33,11 +34,12 @@ class TestSplitQuery(unittest.TestCase):
         self.assertEqual(parent_to_child_connection.sink_field_path,
                          child_to_parent_connection.source_field_path)
 
-    def _check_simple_parent_child_structure(self, full_query_str, parent_str, parent_field_path,
-                                             parent_schema_id, child_str, child_field_path,
-                                             child_schema_id):
+    def _check_simple_parent_child_structure(
+            self, merged_schema, full_query_str, parent_str, parent_field_path,
+            parent_schema_id, child_str, child_field_path, child_schema_id
+        ):
         """Check the query splits into a parent with one child, with specified attributes."""
-        parent_query_node = split_query(parse(full_query_str), basic_merged_schema)
+        parent_query_node = split_query(parse(full_query_str), merged_schema)
         parent_to_child_connection = self._get_unique_element(
             parent_query_node.child_query_connections
         )
@@ -84,8 +86,10 @@ class TestSplitQuery(unittest.TestCase):
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 1]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
     def test_existing_output_field_in_parent(self):
         query_str = dedent('''\
@@ -118,8 +122,10 @@ class TestSplitQuery(unittest.TestCase):
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 1]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
     def test_existing_output_field_in_child(self):
         query_str = dedent('''\
@@ -127,7 +133,7 @@ class TestSplitQuery(unittest.TestCase):
               Animal {
                 out_Animal_Creature {
                   creature_name @output(out_name: "result")
-                  age
+                  age @output(out_name: "age")
                 }
               }
             }
@@ -145,16 +151,17 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 creature_name @output(out_name: "result")
-                age
+                age @output(out_name: "age")
               }
             }
         ''')
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 0]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
-
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
     def test_existing_field_in_both(self):
         query_str = dedent('''\
@@ -163,7 +170,7 @@ class TestSplitQuery(unittest.TestCase):
                 name
                 out_Animal_Creature {
                   creature_name @output(out_name: "result")
-                  age
+                  age @output(out_name: "age")
                 }
               }
             }
@@ -181,15 +188,17 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 creature_name @output(out_name: "result")
-                age
+                age @output(out_name: "age")
               }
             }
         ''')
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 0]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
     def test_more_complex_structure(self):
         query_str = dedent('''\
@@ -233,15 +242,17 @@ class TestSplitQuery(unittest.TestCase):
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 2]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
     def test_existing_directives_on_edge(self):
         query_str = dedent('''\
             {
               Animal {
                 out_Animal_Creature @optional {
-                  age
+                  age @output(out_name: "age")
                 }
               }
             }
@@ -258,7 +269,7 @@ class TestSplitQuery(unittest.TestCase):
         child_str = dedent('''\
             {
               Creature {
-                age
+                age @output(out_name: "age")
                 creature_name
               }
             }
@@ -266,8 +277,47 @@ class TestSplitQuery(unittest.TestCase):
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 1]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
+
+    def test_existing_optional_on_edge_and_field(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature @optional {
+                  age @output(out_name: "age")
+                }
+                name @optional
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Animal {
+                name @optional
+              }
+            }
+        ''')
+        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                             'selections', 1]
+        # NOTE: the last index is 1, because there is a None occupying index 0
+        child_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                creature_name
+              }
+            }
+        ''')
+        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                            'selections', 1]
+
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
     def test_existing_directives_on_edge_moved_to_field(self):
         query_str = dedent('''\
@@ -275,7 +325,7 @@ class TestSplitQuery(unittest.TestCase):
               Animal {
                 name @output(out_name: "result")
                 out_Animal_Creature @optional {
-                  age
+                  age @output(out_name: "age")
                 }
               }
             }
@@ -288,11 +338,11 @@ class TestSplitQuery(unittest.TestCase):
             }
         ''')
         parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 1]
+                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
-                age
+                age @output(out_name: "age")
                 creature_name
               }
             }
@@ -300,12 +350,49 @@ class TestSplitQuery(unittest.TestCase):
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                             'selections', 1]
 
-        self._check_simple_parent_child_structure(query_str, parent_str, parent_field_path, 'first',
-                                                  child_str, child_field_path, 'second')
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
 
-    def test_bad_nonexistent_field(self):
-        # TODO: improve error message here, currently it errors by TypeInfoVisitor returning
-        # None
+    def test_unsupported_directives(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                color @tag(tag_name: "color")
+                out_Animal_ParentOf {
+                  color @filter(op_name: "=", value: ["%color"])
+                        @output(out_name: "result")
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+        query_str = dedent('''\
+            {
+              Animal @fold {
+                color @output(out_name: "result")
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_ParentOf @recurse(depth: 1) {
+                  color @output(out_name: "result")
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+    def test_invalid_query_nonexistent_field(self):
         query_str = dedent('''\
             {
               Animal {
@@ -315,7 +402,84 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_query_node = split_query(parse(query_str), basic_merged_schema)
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
 
+    def test_type_coercion_before_edge(self):
+        query_str = dedent('''\
+            {
+              Entity {
+                uuid
+                ... on Animal {
+                  out_Animal_Creature {
+                    age @output(out_name: "age")
+                  }
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Entity {
+                uuid
+                ... on Animal {
+                  name
+                }
+              }
+            }
+        ''')
+        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                             'selections', 1, 'selection_set', 'selections', 0]
+        child_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                creature_name
+              }
+            }
+        ''')
+        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                            'selections', 1]
 
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
+
+    def test_type_coercion_after_edge(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  ... on Cat {
+                    age @output(out_name: "age")
+                  }
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Animal {
+                name
+              }
+            }
+        ''')
+        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                             'selections', 0]
+        child_str = dedent('''\
+            {
+              Cat {
+                age @output(out_name: "age")
+                creature_name
+              }
+            }
+        ''')
+        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                            'selections', 1]
+
+        self._check_simple_parent_child_structure(
+            interface_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
     # TODO: tests for interfaces and union type coercions

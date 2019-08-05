@@ -147,12 +147,27 @@ def try_get_ast_and_index(asts, target_name, target_type):
     """
     if asts is None:
         return (None, None)
-    # Check there is only one? TODO
     for index, ast in enumerate(asts):
         if isinstance(ast, target_type):
             if ast.name.value == target_name:
                 return (ast, index)
     return (None, None)
+
+
+def try_get_ast(asts, target_name, target_type):
+    """Return the ast in the list with the desired name and type, if found.
+
+    Args:
+        asts: List[Node] or None
+        target_name: str, name of the AST we're looking for
+        target_type: Node, the type of the AST we're looking for. Must be a type with a .name
+                     attribute, e.g. Field, Directive
+
+    Returns:
+        Node, an element in the input list with the correct name and type, or None if not found
+    """
+    ast, _ = try_get_ast_and_index(asts, target_name, target_type)
+    return ast
 
 
 class CheckValidTypesAndNamesVisitor(Visitor):

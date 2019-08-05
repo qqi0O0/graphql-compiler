@@ -8,7 +8,7 @@ from graphql_compiler.schema_transformation.merge_schemas import (
 from ..test_helpers import SCHEMA_TEXT
 
 
-additional_schema = '''
+basic_additional_schema = '''
 schema {
   query: SchemaQuery
 }
@@ -28,7 +28,53 @@ type SchemaQuery {
 basic_merged_schema = merge_schemas(
     OrderedDict([
         ('first', parse(SCHEMA_TEXT)),
-        ('second', parse(additional_schema)),
+        ('second', parse(basic_additional_schema)),
+    ]),
+    [
+        CrossSchemaEdgeDescriptor(
+            edge_name='Animal_Creature',
+            outbound_field_reference=FieldReference(
+                schema_id='first',
+                type_name='Animal',
+                field_name='name',
+            ),
+            inbound_field_reference=FieldReference(
+                schema_id='second',
+                type_name='Creature',
+                field_name='creature_name'
+            ),
+            out_edge_only=False,
+        ),
+    ],
+)
+
+
+interface_additional_schema = '''
+schema {
+  query: SchemaQuery
+}
+
+interface Creature {
+  creature_name: String
+  age: Int
+}
+
+type Cat implements Creature {
+  creature_name: String
+  age: Int
+}
+
+type SchemaQuery {
+  Creature: Creature
+  Cat: Cat
+}
+'''
+
+
+interface_merged_schema = merge_schemas(
+    OrderedDict([
+        ('first', parse(SCHEMA_TEXT)),
+        ('second', parse(interface_additional_schema)),
     ]),
     [
         CrossSchemaEdgeDescriptor(

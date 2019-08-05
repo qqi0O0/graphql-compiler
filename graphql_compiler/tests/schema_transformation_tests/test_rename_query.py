@@ -6,8 +6,8 @@ from graphql import parse
 from graphql.language.printer import print_ast
 from graphql_compiler.schema_transformation.rename_query import rename_query
 from graphql_compiler.schema_transformation.rename_schema import rename_schema
+from graphql_compiler.exceptions import GraphQLValidationError
 
-from ...exceptions import GraphQLValidationError
 from .input_schema_strings import InputSchemaStrings as ISS
 
 
