@@ -35,10 +35,6 @@ class QueryNode(object):
         self.child_query_connections = []
         # List[QueryNode], the queries that depend on the current query
 
-    def reroot_tree(self):
-        # Prevent flipping optional edges
-        pass
-
 
 def split_query(query_ast, merged_schema_descriptor):
     """Split input query AST into a tree of QueryNodes targeting each individual schema.
@@ -68,9 +64,7 @@ def split_query(query_ast, merged_schema_descriptor):
     edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
 
     root_query_node = QueryNode(query_ast)
-    merged_schema = build_ast_schema(merged_schema_descriptor.schema_ast)
-    # NOTE: above step can be very slow for a large schema
-    type_info = TypeInfo(merged_schema)
+    type_info = TypeInfo(merged_schema_descriptor.schema)
     query_nodes_to_visit = [root_query_node]
 
     # Construct full tree of QueryNodes in a dfs pattern
@@ -139,7 +133,7 @@ class SplitQueryVisitor(Visitor):
             self._get_child_root_vertex_field_name_and_selection_set(node)
 
         if self._try_get_stitch_fields(node) is None:
-            # Check or set schema id of end of edge that does not cross the schema
+            # Check or set the schema id of the end of the edge that does not cross the schema
             self._check_or_set_schema_id(child_type_name)
             return
         parent_field_name, child_field_name = self._try_get_stitch_fields(node)
