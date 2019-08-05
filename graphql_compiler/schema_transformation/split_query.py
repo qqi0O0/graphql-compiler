@@ -2,7 +2,7 @@
 from collections import namedtuple
 from copy import copy, deepcopy
 
-from graphql import build_ast_schema
+from graphql import print_ast
 from graphql.language import ast as ast_types
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.type.definition import GraphQLList, GraphQLNonNull
@@ -10,7 +10,7 @@ from graphql.utils.type_info import TypeInfo
 from graphql.validation import validate
 
 from ..exceptions import GraphQLValidationError
-from .utils import try_get_ast, try_get_ast_and_index, SchemaStructureError
+from .utils import SchemaStructureError, try_get_ast, try_get_ast_and_index
 
 
 QueryConnection = namedtuple(
@@ -67,7 +67,7 @@ def split_query(query_ast, merged_schema_descriptor):
     query_ast = deepcopy(query_ast)
     # If schema directives are correctly represented in the schema object, type_info is all
     # that's needed to detect and address stitching fields. However, before this issue is
-    # fixed, it's necessary to use additional information from preprocessing the schema AST
+    # fixed, it's necessary to use additional information from pre-processing the schema AST
     edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
 
     root_query_node = SubQueryNode(query_ast)
@@ -91,6 +91,40 @@ def split_query(query_ast, merged_schema_descriptor):
         )
 
     return root_query_node
+
+
+def _get_edge_to_stitch_fields(merged_schema_descriptor):
+    """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
+
+    This is necessary only because graphql currently doesn't process schema directives correctly.
+    Once schema directives are correctly added to GraphQLSchema objects, this part may be
+    removed as directives on a schema field can be directly accessed.
+
+    Args:
+        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing a schema ast
+                                  and a map from names of types to their schema ids
+
+    Returns:
+        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, edge field name) to
+        (source field name, sink field name) used in the @stitch directive, for each cross
+        schema edge
+    """
+    edge_to_stitch_fields = {}
+    for type_definition in merged_schema_descriptor.schema_ast.definitions:
+        if isinstance(type_definition, (
+            ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
+        )):
+            for field_definition in type_definition.fields:
+                stitch_directive = try_get_ast(
+                    field_definition.directives, u'stitch', ast_types.Directive
+                )
+                if stitch_directive is not None:
+                    source_field_name = stitch_directive.arguments[0].value.value
+                    sink_field_name = stitch_directive.arguments[1].value.value
+                    edge = (type_definition.name.value, field_definition.name.value)
+                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
+
+    return edge_to_stitch_fields
 
 
 SUPPORTED_DIRECTIVES = frozenset(('filter', 'output', 'optional', 'stitch'))
@@ -306,7 +340,7 @@ class SplitQueryVisitor(Visitor):
             child_type_name = type_coercion_inline_fragment.type_condition.name.value
             child_selection_set = type_coercion_inline_fragment.selection_set
 
-        return (child_type_name, child_selection_set)
+        return child_type_name, child_selection_set
 
     def _add_directives_from_edge(self, field, new_directives):
         """Add new directives to field as necessary, raising error for illegal duplicates.
@@ -389,37 +423,3 @@ class SplitQueryVisitor(Visitor):
                 u'Unreachable code reached. The schema id of query piece "{}" has not been '
                 u'determined.'.format(print_ast(self.root_query_node.query_ast))
             )
-
-
-def _get_edge_to_stitch_fields(merged_schema_descriptor):
-    """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
-
-    This is necessary only because graphql currently doesn't process schema directives correctly.
-    Once schema directives are correctly added to GraphQLSchema objects, this part may be
-    removed as directives on a schema field can be directly accessed.
-
-    Args:
-        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing a schema ast
-                                  and a map from names of types to their schema ids
-
-    Returns:
-        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, edge field name) to
-        (source field name, sink field name) used in the @stitch directive, for each cross
-        schema edge
-    """
-    edge_to_stitch_fields = {}
-    for type_definition in merged_schema_descriptor.schema_ast.definitions:
-        if isinstance(type_definition, (
-            ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
-        )):
-            for field_definition in type_definition.fields:
-                stitch_directive = try_get_ast(
-                    field_definition.directives, u'stitch', ast_types.Directive
-                )
-                if stitch_directive is not None:
-                    source_field_name = stitch_directive.arguments[0].value.value
-                    sink_field_name = stitch_directive.arguments[1].value.value
-                    edge = (type_definition.name.value, field_definition.name.value)
-                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
-
-    return edge_to_stitch_fields
