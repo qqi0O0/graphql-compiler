@@ -4,7 +4,10 @@ import unittest
 
 from graphql import parse, print_ast
 from graphql_compiler.schema_transformation.split_query import (
-    print_query_plan, split_query, stabilize_and_add_directives
+    split_query
+)
+from graphql_compiler.schema_transformation.make_logical_query_plan import (
+    print_query_plan, stabilize_and_add_directives
 )
 
 from .example_schema import basic_merged_schema

@@ -9,7 +9,7 @@ import six
 
 from ..ast_manipulation import get_ast_with_non_null_stripped
 from ..compiler.helpers import INBOUND_EDGE_DIRECTION, OUTBOUND_EDGE_DIRECTION
-from .subclass import compute_subclass_sets
+from ..compiler.subclass import compute_subclass_sets
 from .utils import (
     InvalidCrossSchemaEdgeError, SchemaNameConflictError, check_ast_schema_is_valid,
     check_schema_identifier_is_valid, get_query_type_name
