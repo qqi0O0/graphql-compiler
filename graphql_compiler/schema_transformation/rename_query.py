@@ -4,7 +4,6 @@ from copy import deepcopy
 from graphql.language import ast as ast_types
 from graphql.language.visitor import Visitor, visit
 from graphql.validation import validate
-from graphql.error import GraphQLError
 
 from ..exceptions import GraphQLValidationError
 
