@@ -512,6 +512,13 @@ class TestMergeSchemasNoCrossSchemaEdges(unittest.TestCase):
                 ]),
                 [],
             )
+        with self.assertRaises(ValueError):
+            merge_schemas(
+                OrderedDict([
+                    (42, parse(ISS.basic_schema)),
+                ]),
+                [],
+            )
 
 
 class TestMergeSchemasCrossSchemaEdgesWithoutSubclasses(unittest.TestCase):
