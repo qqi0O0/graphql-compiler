@@ -195,6 +195,8 @@ class TestRenameQuery(unittest.TestCase):
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
+
+class TestRenameQueryInvalidQuery(unittest.TestCase):
     def test_invalid_query_type_not_in_schema(self):
         query_string = dedent('''\
            {
