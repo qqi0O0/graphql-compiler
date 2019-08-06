@@ -1467,10 +1467,12 @@ class TestMergeSchemasCrossSchemaEdgesWithSubclasses(unittest.TestCase):
 
         Args:
             schema_id_to_ast: Dict[str, Document]
-            type_equivalence_hints_names: Dict[str, str]
+            type_equivalence_hints_names: Dict[str, str], mapping object type name to its
+                                          equivalent union type name
 
         Returns:
-            Dict[GraphQLObjectType, GraphQLUnionType]
+            Dict[GraphQLObjectType, GraphQLUnionType], mapping object type to its equivalent
+            union type
         """
         name_to_type = {}
         for ast in six.itervalues(schema_id_to_ast):
