@@ -183,7 +183,7 @@ class SplitQueryVisitor(Visitor):
             return
 
         if child_selection_set is None:
-            raise SchemaStructure(
+            raise SchemaStructureError(
                 u'The edge "{}" is unexpectedly a property field with no further selection '
                 u'set, but edges marked with @stitch must be vertex fields, connecting '
                 u'vertices between schemas.'.format(node)
