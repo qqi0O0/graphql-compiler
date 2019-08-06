@@ -11,6 +11,7 @@ from .utils import try_get_ast_and_index
 SubQueryPlan = namedtuple(
     'SubQueryPlan', (
         'query_ast',  # Document
+        'schema_id',  # str
         'parent_query_plan',  # SubQueryPlan
         'child_query_plans',  # List[SubQueryPlan]
     )
@@ -68,7 +69,8 @@ def make_query_plan(root_sub_query_node):
     _output_count = [0]  # Workaround for lack of nonlocal in python 2
 
     root_sub_query_plan = SubQueryPlan(
-        query_ast=deepcopy(query_node.query_ast),
+        query_ast=deepcopy(root_sub_query_node.query_ast),
+        schema_id=root_sub_query_node.schema_id,
         parent_query_plan=None,
         child_query_plans=[],
     )
@@ -94,6 +96,8 @@ def make_query_plan(root_sub_query_node):
             # Create and add new directive to field
             out_name = _assign_and_return_output_name()
             output_directive = _get_output_directive(out_name)
+            if field.directives is None:
+                field.directives = []
             field.directives.append(output_directive)
             return out_name
         else:
@@ -116,7 +120,7 @@ def make_query_plan(root_sub_query_node):
         parent_query_ast = sub_query_plan.query_ast  # Can modify and add directives
 
         # Iterate through child connections of query node
-        for child_query_connection in query_node.child_query_connections:
+        for child_query_connection in sub_query_node.child_query_connections:
             child_sub_query_node = child_query_connection.sink_query_node
             child_query_ast = deepcopy(child_sub_query_node.query_ast)  # Prevent modifying input
 
@@ -140,11 +144,12 @@ def make_query_plan(root_sub_query_node):
             # Create new SubQueryPlan for child
             child_sub_query_plan = SubQueryPlan(
                 query_ast=child_query_ast,
+                schema_id=child_sub_query_node.schema_id,
                 parent_query_plan=sub_query_plan,
                 child_query_plans=[],
             )
 
-            # Add new StableQueryNode to parent's child list
+            # Add new SubQueryPlan to parent's child list
             sub_query_plan.child_query_plans.append(child_sub_query_plan)
 
             # Add information about this edge
@@ -153,7 +158,7 @@ def make_query_plan(root_sub_query_node):
             )
             output_join_descriptors.append(new_output_join_descriptor)
 
-            # Recursively repeat on child StableQueryNode
+            # Recursively repeat on child SubQueryPlan
             _make_query_plan_helper(child_sub_query_node, child_sub_query_plan)
 
     _make_query_plan_helper(root_sub_query_node, root_sub_query_plan)
@@ -177,35 +182,37 @@ def get_node_by_path(ast, path):
     return target_node
 
 
-def _get_depth_and_asts_in_dfs_order(query_plan):
-    def _get_depth_and_asts_in_dfs_order_helper(query_plan, depth):
-        asts_in_dfs_order = [(depth, query_plan.query_ast)]
-        for child_query_plan in query_plan.child_stable_query_nodes:
-            asts_in_dfs_order.extend(
-                _get_depth_and_asts_in_dfs_order_helper(child_stable_query_node, depth + 1)
-            )
-        return asts_in_dfs_order
-    return _get_depth_and_asts_in_dfs_order_helper(stable_query_node, 0)
-
-
-def print_query_plan(stable_query_node):
+def print_query_plan(query_plan_descriptor):
     """Return string describing query plan."""
 
-    query_plan = u''
-    depths_and_asts = _get_depth_and_asts_in_dfs_order(stable_query_node)
+    query_plan_str = u''
+    plan_and_depth = _get_plan_and_depth_in_dfs_order(query_plan_descriptor.root_sub_query_plan)
 
-    for depth, query_ast in depths_and_asts:
+    for query_plan, depth in plan_and_depth:
         line_separation = u'\n' + u' ' * 8 * depth
-        query_plan += line_separation
+        query_plan_str += line_separation
 
-        query_str = print_ast(query_ast)
+        query_str = 'Execute in schema named "{}":\n'.format(query_plan.schema_id)
+        query_str += print_ast(query_plan.query_ast)
         query_str = query_str.replace(u'\n', line_separation)
-        query_plan += query_str
+        query_plan_str += query_str
 
-    return query_plan
-    # @output directives can be attached before order of the tree is known, but @filter and
-    # information on what column is put into what filter must come after the order of the tree
-    # is known
+    query_plan_str +='\n\n'
+    query_plan_str += str(query_plan_descriptor.intermediate_output_names) + '\n\n'
+    query_plan_str += str(query_plan_descriptor.output_join_descriptors) + '\n'
+
+    return query_plan_str
+
+
+def _get_plan_and_depth_in_dfs_order(query_plan):
+    def _get_plan_and_depth_in_dfs_order_helper(query_plan, depth):
+        plan_and_depth_in_dfs_order = [(query_plan, depth)]
+        for child_query_plan in query_plan.child_query_plans:
+            plan_and_depth_in_dfs_order.extend(
+                _get_plan_and_depth_in_dfs_order_helper(child_query_plan, depth + 1)
+            )
+        return plan_and_depth_in_dfs_order
+    return _get_plan_and_depth_in_dfs_order_helper(query_plan, 0)
 
 
 def _get_output_directive(out_name):

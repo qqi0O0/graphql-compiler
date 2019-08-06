@@ -482,6 +482,8 @@ class TestSplitQuery(unittest.TestCase):
         )
 
     def test_union_type_coercion_after_edge(self):
+        pass
         # TODO
-    # TODO: tests for interfaces and union type coercions
-    # TODO: tests where the structure is more than just parent-child
+        # TODO: tests for interfaces and union type coercions
+        # TODO: tests where the structure is more than just parent-child relation
+
