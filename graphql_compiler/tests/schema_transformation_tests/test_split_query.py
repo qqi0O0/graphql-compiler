@@ -245,7 +245,7 @@ class TestSplitQuery(unittest.TestCase):
             child_str, child_field_path, 'second'
         )
 
-    def test_existing_directives_on_edge(self):
+    def test_existing_optional_on_edge(self):
         query_str = dedent('''\
             {
               Animal {
@@ -444,7 +444,7 @@ class TestSplitQuery(unittest.TestCase):
             child_str, child_field_path, 'second'
         )
 
-    def test_type_coercion_after_edge(self):
+    def test_interface_type_coercion_after_edge(self):
         query_str = dedent('''\
             {
               Animal {
@@ -480,4 +480,8 @@ class TestSplitQuery(unittest.TestCase):
             interface_merged_schema, query_str, parent_str, parent_field_path, 'first',
             child_str, child_field_path, 'second'
         )
+
+    def test_union_type_coercion_after_edge(self):
+        # TODO
     # TODO: tests for interfaces and union type coercions
+    # TODO: tests where the structure is more than just parent-child
