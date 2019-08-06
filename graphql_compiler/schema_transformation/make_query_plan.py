@@ -5,24 +5,23 @@ from copy import deepcopy
 from graphql import print_ast
 from graphql.language import ast as ast_types
 
-from .utils import try_get_ast_and_index
+from .utils import try_get_ast
 
 
 SubQueryPlan = namedtuple(
     'SubQueryPlan', (
-        'query_ast',  # Document
-        'schema_id',  # str
-        'parent_query_plan',  # SubQueryPlan
-        'child_query_plans',  # List[SubQueryPlan]
+        'query_ast',  # Document, representing a piece of the overall query with directives added
+        'schema_id',  # str, identifying the schema that this query piece targets
+        'parent_query_plan',  # SubQueryPlan, the query that the current query depends on
+        'child_query_plans',  # List[SubQueryPlan], the queries that depend on the current query
     )
 )
 
 
 OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
-        'output_names',  # Tuple[str, str], should be treated as unordered
-        # 'is_optional',  # boolean
-        # TODO: look into fold and x_count and how to make this interact well with fold
+        'output_names',  # Tuple[str, str], (parent output name, child output name)
+        # 'is_optional',  # boolean, if the parent has an @optional requiring an outer join
     )
 )
 
@@ -30,33 +29,33 @@ OutputJoinDescriptor = namedtuple(
 QueryPlanDescriptor = namedtuple(
     'QueryPlanDescriptor', (
         'root_sub_query_plan',  # SubQueryPlan
-        'intermediate_output_names',  # Set[str], names of outputs to be removed
-        'output_join_descriptors',  # List[OutputJoinDescriptor]
+        'intermediate_output_names',  # Set[str], names of outputs to be removed at the end
+        'output_join_descriptors',
+        # List[OutputJoinDescriptor], describing which outputs should be joined and how
     )
 )
 
 
-# If @output nodes are added only when QueryNodes are turned into StableQueryNodes, then we
-# can't run queries contained in QueryNodes to, say, estimate the size of outputs, because some
-# such queries don't contain any outputs and are invalid.
-
-
 def make_query_plan(root_sub_query_node):
-    """Return a QueryPlanDescriptor, whose query pieces have @filter and @output directives added.
+    """Return a QueryPlanDescriptor, whose query ASTs have @filter and @output directives added.
+
+    For each stitch, if the property field in the parent used in the stitch does not already
+    have an @output directive, one will be added with an auto-generated out_name. The property
+    field in the child will correspondingly have an @filter directive with an in_collection
+    operation added. The name of the local variable in the filter directive is guaranteed to
+    be identical to the outname of the parent's @output directive.
 
     ASTs contained in the input node and its children nodes will not be modified.
-
-    The name of the variable used in each @filter directive is identical to the outname of the
-    parent's @output directive.
 
     Args:
         root_sub_query_node: SubQueryNode, representing the base of a query split into pieces
                              that we want to turn into a query plan
 
     Returns:
-        QueryPlanDescriptor namedtuple, containing a tree of individual SubQueryPlans that
-        wrap around each individual query AST, the set of intermediate output names that are
+        QueryPlanDescriptor namedtuple, containing a tree of SubQueryPlans that wrap
+        around each individual query AST, the set of intermediate output names that are
         to be removed at the end, and information on which outputs are to be connect to which
+        in what manner
     """
     # Making the input filter name identical to the output name can cause name conflicts in a
     # very uncommon edge case, where the user has defined the parent @output, and also has
@@ -88,9 +87,7 @@ def make_query_plan(root_sub_query_node):
             field: Field object, whose directives we may modify
         """
         # Check for existing directive
-        output_directive, _ = try_get_ast_and_index(
-            field.directives, u'output', ast_types.Directive
-        )
+        output_directive = try_get_ast(field.directives, u'output', ast_types.Directive)
         if output_directive is None:
             # Create and add new directive to field
             out_name = _assign_and_return_output_name()
@@ -169,51 +166,6 @@ def make_query_plan(root_sub_query_node):
     )
 
 
-def get_node_by_path(ast, path):
-    target_node = ast
-    for key in path:
-        if isinstance(key, str):
-            target_node = getattr(target_node, key)
-        elif isinstance(key, int):
-            target_node = target_node[key]
-        else:
-            raise AssertionError(u'')
-    return target_node
-
-
-def print_query_plan(query_plan_descriptor):
-    """Return string describing query plan."""
-
-    query_plan_str = u''
-    plan_and_depth = _get_plan_and_depth_in_dfs_order(query_plan_descriptor.root_sub_query_plan)
-
-    for query_plan, depth in plan_and_depth:
-        line_separation = u'\n' + u' ' * 8 * depth
-        query_plan_str += line_separation
-
-        query_str = 'Execute in schema named "{}":\n'.format(query_plan.schema_id)
-        query_str += print_ast(query_plan.query_ast)
-        query_str = query_str.replace(u'\n', line_separation)
-        query_plan_str += query_str
-
-    query_plan_str += '\n\n'
-    query_plan_str += str(query_plan_descriptor.intermediate_output_names) + '\n\n'
-    query_plan_str += str(query_plan_descriptor.output_join_descriptors) + '\n'
-
-    return query_plan_str
-
-
-def _get_plan_and_depth_in_dfs_order(query_plan):
-    def _get_plan_and_depth_in_dfs_order_helper(query_plan, depth):
-        plan_and_depth_in_dfs_order = [(query_plan, depth)]
-        for child_query_plan in query_plan.child_query_plans:
-            plan_and_depth_in_dfs_order.extend(
-                _get_plan_and_depth_in_dfs_order_helper(child_query_plan, depth + 1)
-            )
-        return plan_and_depth_in_dfs_order
-    return _get_plan_and_depth_in_dfs_order_helper(query_plan, 0)
-
-
 def _get_output_directive(out_name):
     return ast_types.Directive(
         name=ast_types.Name(value=u'output'),
@@ -244,6 +196,50 @@ def _get_in_collection_filter_directive(input_filter_name):
             ),
         ],
     )
+
+
+def get_node_by_path(ast, path):
+    target_node = ast
+    for key in path:
+        if isinstance(key, str):
+            target_node = getattr(target_node, key)
+        elif isinstance(key, int):
+            target_node = target_node[key]
+        else:
+            raise AssertionError(u'')
+    return target_node
+
+
+def print_query_plan(query_plan_descriptor):
+    """Return string describing query plan."""
+    query_plan_str = u''
+    plan_and_depth = _get_plan_and_depth_in_dfs_order(query_plan_descriptor.root_sub_query_plan)
+
+    for query_plan, depth in plan_and_depth:
+        line_separation = u'\n' + u' ' * 8 * depth
+        query_plan_str += line_separation
+
+        query_str = 'Execute in schema named "{}":\n'.format(query_plan.schema_id)
+        query_str += print_ast(query_plan.query_ast)
+        query_str = query_str.replace(u'\n', line_separation)
+        query_plan_str += query_str
+
+    query_plan_str += '\n\n'
+    query_plan_str += str(query_plan_descriptor.intermediate_output_names) + '\n\n'
+    query_plan_str += str(query_plan_descriptor.output_join_descriptors) + '\n'
+
+    return query_plan_str
+
+
+def _get_plan_and_depth_in_dfs_order(query_plan):
+    def _get_plan_and_depth_in_dfs_order_helper(query_plan, depth):
+        plan_and_depth_in_dfs_order = [(query_plan, depth)]
+        for child_query_plan in query_plan.child_query_plans:
+            plan_and_depth_in_dfs_order.extend(
+                _get_plan_and_depth_in_dfs_order_helper(child_query_plan, depth + 1)
+            )
+        return plan_and_depth_in_dfs_order
+    return _get_plan_and_depth_in_dfs_order_helper(query_plan, 0)
 
 
 # Ok, conclusion:
