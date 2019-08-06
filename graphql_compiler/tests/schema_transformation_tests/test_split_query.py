@@ -3,10 +3,10 @@ from textwrap import dedent
 import unittest
 
 from graphql import parse, print_ast
-from graphql_compiler.exceptions import GraphQLValidationError
-from graphql_compiler.schema_transformation.split_query import split_query
 
 from .example_schema import basic_merged_schema, interface_merged_schema
+from ...exceptions import GraphQLValidationError
+from ...schema_transformation.split_query import split_query
 
 
 class TestSplitQuery(unittest.TestCase):

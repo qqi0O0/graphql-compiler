@@ -2,10 +2,10 @@ from textwrap import dedent
 import unittest
 
 from graphql import parse
-from graphql_compiler.schema_transformation.make_query_plan import make_query_plan, print_query_plan
-from graphql_compiler.schema_transformation.split_query import split_query
 
 from .example_schema import basic_merged_schema
+from ...schema_transformation.make_query_plan import make_query_plan, print_query_plan
+from ...schema_transformation.split_query import split_query
 
 
 class TestModifySplitQuery(unittest.TestCase):

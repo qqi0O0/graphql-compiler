@@ -5,15 +5,13 @@ import unittest
 
 from graphql import build_ast_schema, parse
 from graphql.language.printer import print_ast
-from graphql_compiler.schema_transformation.merge_schemas import (
-    CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
-)
-from graphql_compiler.schema_transformation.utils import (
-    InvalidCrossSchemaEdgeError, SchemaNameConflictError
-)
 import six
 
 from .input_schema_strings import InputSchemaStrings as ISS
+from ...schema_transformation.merge_schemas import (
+    CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
+)
+from ...schema_transformation.utils import InvalidCrossSchemaEdgeError, SchemaNameConflictError
 
 
 class TestMergeSchemasNoCrossSchemaEdges(unittest.TestCase):

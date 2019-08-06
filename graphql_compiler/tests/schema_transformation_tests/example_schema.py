@@ -2,12 +2,12 @@
 from collections import OrderedDict
 
 from graphql import build_ast_schema, parse
-from graphql_compiler.schema_transformation.merge_schemas import (
-    CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
-)
-from graphql_compiler.schema_transformation.rename_schema import rename_schema
 import six
 
+from ...schema_transformation.merge_schemas import (
+    CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
+)
+from ...schema_transformation.rename_schema import rename_schema
 from ..test_helpers import SCHEMA_TEXT
 
 
