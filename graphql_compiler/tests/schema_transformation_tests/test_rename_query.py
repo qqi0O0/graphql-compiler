@@ -4,11 +4,10 @@ import unittest
 
 from graphql import parse
 from graphql.language.printer import print_ast
+from graphql_compiler.exceptions import GraphQLValidationError
 from graphql_compiler.schema_transformation.rename_query import rename_query
 from graphql_compiler.schema_transformation.rename_schema import rename_schema
-from graphql_compiler.exceptions import GraphQLValidationError
 
-from .input_schema_strings import InputSchemaStrings as ISS
 from .example_schema import basic_schema, basic_renamed_schema
 
 
@@ -21,10 +20,7 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            rename_schema(basic_schema, {})
-        )
+        renamed_query = rename_query(parse(query_string), rename_schema(basic_schema, {}))
         self.assertEqual(query_string, print_ast(renamed_query))
 
     def test_original_unmodified(self):
@@ -36,10 +32,7 @@ class TestRenameQuery(unittest.TestCase):
             }
         ''')
         ast = parse(query_string)
-        renamed_query = rename_query(
-            parse(query_string),
-            basic_renamed_schema
-        )
+        rename_query(parse(query_string), basic_renamed_schema)
         self.assertEqual(ast, parse(query_string))
 
     def test_rename_unnamed_query(self):
@@ -50,10 +43,7 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            basic_renamed_schema
-        )
+        renamed_query = rename_query(parse(query_string), basic_renamed_schema)
         renamed_query_string = dedent('''\
             {
               Animal {
@@ -71,10 +61,7 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            basic_renamed_schema
-        )
+        renamed_query = rename_query(parse(query_string), basic_renamed_schema)
         renamed_query_string = dedent('''\
             query AnimalQuery {
               Animal {
@@ -99,10 +86,7 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            basic_renamed_schema
-        )
+        renamed_query = rename_query(parse(query_string), basic_renamed_schema)
         renamed_query_string = dedent('''\
             {
               Animal {
@@ -131,16 +115,47 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            basic_renamed_schema
-        )
+        renamed_query = rename_query(parse(query_string), basic_renamed_schema)
         renamed_query_string = dedent('''\
             {
               Entity {
                 out_Entity_Related {
                   ... on Animal {
                     color
+                  }
+                }
+              }
+            }
+        ''')
+        self.assertEqual(renamed_query_string, print_ast(renamed_query))
+
+    def test_nested_inline_fragment(self):
+        query_string = dedent('''\
+            {
+              NewEntity {
+                out_Entity_Related {
+                  ... on NewAnimal {
+                    out_Animal_ImportantEvent {
+                      ... on NewBirthEvent {
+                        event_date
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        ''')
+        renamed_query = rename_query(parse(query_string), basic_renamed_schema)
+        renamed_query_string = dedent('''\
+            {
+              Entity {
+                out_Entity_Related {
+                  ... on Animal {
+                    out_Animal_ImportantEvent {
+                      ... on BirthEvent {
+                        event_date
+                      }
+                    }
                   }
                 }
               }
@@ -163,10 +178,7 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        renamed_query = rename_query(
-            parse(query_string),
-            basic_renamed_schema
-        )
+        renamed_query = rename_query(parse(query_string), basic_renamed_schema)
         renamed_query_string = dedent('''\
             {
               Entity {

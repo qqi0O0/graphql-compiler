@@ -3,10 +3,8 @@ from textwrap import dedent
 import unittest
 
 from graphql import parse, print_ast
-from graphql_compiler.schema_transformation.split_query import (
-    split_query
-)
 from graphql_compiler.exceptions import GraphQLValidationError
+from graphql_compiler.schema_transformation.split_query import split_query
 
 from .example_schema import basic_merged_schema, interface_merged_schema
 
@@ -35,9 +33,9 @@ class TestSplitQuery(unittest.TestCase):
                          child_to_parent_connection.source_field_path)
 
     def _check_simple_parent_child_structure(
-            self, merged_schema, full_query_str, parent_str, parent_field_path,
-            parent_schema_id, child_str, child_field_path, child_schema_id
-        ):
+        self, merged_schema, full_query_str, parent_str, parent_field_path,
+        parent_schema_id, child_str, child_field_path, child_schema_id
+    ):
         """Check the query splits into a parent with one child, with specified attributes."""
         parent_query_node = split_query(parse(full_query_str), merged_schema)
         parent_to_child_connection = self._get_unique_element(

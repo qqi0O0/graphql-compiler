@@ -6,6 +6,7 @@ from graphql_compiler.schema_transformation.merge_schemas import (
     CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
 )
 from graphql_compiler.schema_transformation.rename_schema import rename_schema
+
 from ..test_helpers import SCHEMA_TEXT
 
 
@@ -13,7 +14,7 @@ basic_schema = parse(SCHEMA_TEXT)
 
 
 basic_renamed_schema = rename_schema(
-    basic_schema, {'Animal': 'NewAnimal', 'Entity': 'NewEntity'}
+    basic_schema, {'Animal': 'NewAnimal', 'Entity': 'NewEntity', 'BirthEvent': 'NewBirthEvent'}
 )
 
 
