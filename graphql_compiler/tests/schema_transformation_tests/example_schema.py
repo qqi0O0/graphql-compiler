@@ -1,4 +1,4 @@
-# Copyright 2019-present Kensho Technologies, LLC
+# Copyright 2019-present Kensho Technologies, LLC.
 from collections import OrderedDict
 
 from graphql import build_ast_schema, parse
