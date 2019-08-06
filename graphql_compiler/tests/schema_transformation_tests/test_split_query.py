@@ -486,4 +486,3 @@ class TestSplitQuery(unittest.TestCase):
         # TODO
         # TODO: tests for interfaces and union type coercions
         # TODO: tests where the structure is more than just parent-child relation
-

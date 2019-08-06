@@ -41,7 +41,6 @@ QueryPlanDescriptor = namedtuple(
 # such queries don't contain any outputs and are invalid.
 
 
-
 def make_query_plan(root_sub_query_node):
     """Return a QueryPlanDescriptor, whose query pieces have @filter and @output directives added.
 
@@ -197,7 +196,7 @@ def print_query_plan(query_plan_descriptor):
         query_str = query_str.replace(u'\n', line_separation)
         query_plan_str += query_str
 
-    query_plan_str +='\n\n'
+    query_plan_str += '\n\n'
     query_plan_str += str(query_plan_descriptor.intermediate_output_names) + '\n\n'
     query_plan_str += str(query_plan_descriptor.output_join_descriptors) + '\n'
 

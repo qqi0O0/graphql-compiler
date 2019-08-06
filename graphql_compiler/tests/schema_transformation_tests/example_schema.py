@@ -1,12 +1,12 @@
 # Copyright 2019-present Kensho Technologies, LLC
 from collections import OrderedDict
-import six
 
-from graphql import parse, build_ast_schema
+from graphql import build_ast_schema, parse
 from graphql_compiler.schema_transformation.merge_schemas import (
     CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
 )
 from graphql_compiler.schema_transformation.rename_schema import rename_schema
+import six
 
 from ..test_helpers import SCHEMA_TEXT
 
