@@ -5,10 +5,10 @@ import unittest
 from graphql import parse
 from graphql.language.printer import print_ast
 
-from .example_schema import basic_renamed_schema, basic_schema
 from ...exceptions import GraphQLValidationError
 from ...schema_transformation.rename_query import rename_query
 from ...schema_transformation.rename_schema import rename_schema
+from .example_schema import basic_renamed_schema, basic_schema
 
 
 class TestRenameQuery(unittest.TestCase):
