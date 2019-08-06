@@ -5,7 +5,16 @@ from graphql import parse
 from graphql_compiler.schema_transformation.merge_schemas import (
     CrossSchemaEdgeDescriptor, FieldReference, merge_schemas
 )
+from graphql_compiler.schema_transformation.rename_schema import rename_schema
 from ..test_helpers import SCHEMA_TEXT
+
+
+basic_schema = parse(SCHEMA_TEXT)
+
+
+basic_renamed_schema = rename_schema(
+    basic_schema, {'Animal': 'NewAnimal', 'Entity': 'NewEntity'}
+)
 
 
 basic_additional_schema = '''
@@ -27,7 +36,7 @@ type SchemaQuery {
 
 basic_merged_schema = merge_schemas(
     OrderedDict([
-        ('first', parse(SCHEMA_TEXT)),
+        ('first', basic_schema),
         ('second', parse(basic_additional_schema)),
     ]),
     [
@@ -73,7 +82,7 @@ type SchemaQuery {
 
 interface_merged_schema = merge_schemas(
     OrderedDict([
-        ('first', parse(SCHEMA_TEXT)),
+        ('first', basic_schema),
         ('second', parse(interface_additional_schema)),
     ]),
     [

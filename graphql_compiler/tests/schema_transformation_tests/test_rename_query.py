@@ -9,55 +9,55 @@ from graphql_compiler.schema_transformation.rename_schema import rename_schema
 from graphql_compiler.exceptions import GraphQLValidationError
 
 from .input_schema_strings import InputSchemaStrings as ISS
+from .example_schema import basic_schema, basic_renamed_schema
 
 
-# TODO: change to using the schema in helper
 class TestRenameQuery(unittest.TestCase):
     def test_no_rename(self):
         query_string = dedent('''\
             {
-              Human {
-                id
+              Animal {
+                color
               }
             }
         ''')
         renamed_query = rename_query(
             parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {})
+            rename_schema(basic_schema, {})
         )
         self.assertEqual(query_string, print_ast(renamed_query))
 
     def test_original_unmodified(self):
         query_string = dedent('''\
             {
-              NewHuman {
-                id
+              NewAnimal {
+                color
               }
             }
         ''')
         ast = parse(query_string)
         renamed_query = rename_query(
             parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
+            basic_renamed_schema
         )
         self.assertEqual(ast, parse(query_string))
 
     def test_rename_unnamed_query(self):
         query_string = dedent('''\
-           {
-              NewHuman {
-                id
+            {
+              NewAnimal {
+                color
               }
             }
         ''')
         renamed_query = rename_query(
             parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
+            basic_renamed_schema
         )
         renamed_query_string = dedent('''\
             {
-              Human {
-                id
+              Animal {
+                color
               }
             }
         ''')
@@ -65,35 +65,35 @@ class TestRenameQuery(unittest.TestCase):
 
     def test_rename_named_query(self):
         query_string = dedent('''\
-            query HumanIdQuery {
-              NewHuman {
-                id
+            query AnimalQuery {
+              NewAnimal {
+                color
               }
             }
         ''')
         renamed_query = rename_query(
             parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
+            basic_renamed_schema
         )
         renamed_query_string = dedent('''\
-            query HumanIdQuery {
-              Human {
-                id
+            query AnimalQuery {
+              Animal {
+                color
               }
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-    """
+
     def test_rename_nested_query(self):
         query_string = dedent('''\
             {
-              NewHuman {
+              NewAnimal {
                 name
-                friends {
+                out_Animal_ParentOf {
                   name
-                  appearsIn
-                  friends {
-                    name
+                  description
+                  out_Animal_LivesIn {
+                    description
                   }
                 }
               }
@@ -101,62 +101,63 @@ class TestRenameQuery(unittest.TestCase):
         ''')
         renamed_query = rename_query(
             parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
+            basic_renamed_schema
         )
         renamed_query_string = dedent('''\
             {
-              Human {
+              Animal {
                 name
-                friends {
+                out_Animal_ParentOf {
                   name
-                  appearsIn
-                  friends {
-                    name
+                  description
+                  out_Animal_LivesIn {
+                    description
                   }
                 }
               }
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-    """
 
     def test_inline_fragment(self):
         query_string = dedent('''\
             {
-              NewCharacter {
-                id
-                ... on NewHuman {
-                  age
+              NewEntity {
+                out_Entity_Related {
+                  ... on NewAnimal {
+                    color
+                  }
                 }
               }
             }
         ''')
         renamed_query = rename_query(
             parse(query_string),
-            rename_schema(parse(ISS.multiple_interfaces_schema),
-                          {'Human': 'NewHuman', 'Character': 'NewCharacter'}
-            )
+            basic_renamed_schema
         )
         renamed_query_string = dedent('''\
             {
-              Character {
-                id
-                ... on Human {
-                  age
+              Entity {
+                out_Entity_Related {
+                  ... on Animal {
+                    color
+                  }
                 }
               }
             }
         ''')
         self.assertEqual(renamed_query_string, print_ast(renamed_query))
-    """
+
     def test_directive(self):
         query_string = dedent('''\
             {
-              Animal {
-                name @output(out_name: "name")
+              NewEntity {
                 out_Entity_Related {
-                  ... on Species {
-                    description @output(out_name: "description")
+                  ... on NewAnimal {
+                    color @output(out_name: "color")
+                    out_Animal_ParentOf @optional {
+                      name @filter(op_name: "=", value: ["$species_name"])
+                    }
                   }
                 }
               }
@@ -164,27 +165,25 @@ class TestRenameQuery(unittest.TestCase):
         ''')
         renamed_query = rename_query(
             parse(query_string),
-            {
-                'Animal': 'NewAnimal',
-                'Species': 'NewSpecies',
-                'output': 'Output',
-            }
+            basic_renamed_schema
         )
         renamed_query_string = dedent('''\
             {
-              NewAnimal {
-                name @output(out_name: "name")
+              Entity {
                 out_Entity_Related {
-                  ... on NewSpecies {
-                    description @output(out_name: "description")
+                  ... on Animal {
+                    color @output(out_name: "color")
+                    out_Animal_ParentOf @optional {
+                      name @filter(op_name: "=", value: ["$species_name"])
+                    }
                   }
                 }
               }
             }
         ''')
-        self.assertEqual(renamed_query_string, print_ast(renamed_query))"""
+        self.assertEqual(renamed_query_string, print_ast(renamed_query))
 
-    def test_invalid_type_not_in_schema(self):
+    def test_invalid_query_type_not_in_schema(self):
         query_string = dedent('''\
            {
               RandomType {
@@ -192,71 +191,55 @@ class TestRenameQuery(unittest.TestCase):
               }
             }
         ''')
-        rename_query(
-            parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
-        )
+        with self.assertRaises(GraphQLValidationError):
+            rename_query(parse(query_string), rename_schema(basic_schema, {}))
 
     def test_invalid_field_not_in_schema(self):
         query_string = dedent('''\
            {
-              NewHuman {
-                name
+              Animal {
+                age
               }
             }
         ''')
-        rename_query(
-            parse(query_string),
-            rename_schema(parse(ISS.basic_schema), {'Human': 'NewHuman'})
-        )
+        with self.assertRaises(GraphQLValidationError):
+            rename_query(parse(query_string), rename_schema(basic_schema, {}))
+
+    def test_invalid_ends_in_vertex_field(self):
+        query_string = dedent('''\
+           {
+              Animal {
+                out_Animal_ParentOf
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            rename_query(parse(query_string), rename_schema(basic_schema, {}))
 
     def test_invalid_start_with_inline(self):
         query_string = dedent('''\
             {
               ... on RootSchemaQuery {
-                Human {
+                Animal {
                   name
                 }
               }
             }
         ''')
         with self.assertRaises(GraphQLValidationError):
-            rename_query(parse(query_string), rename_schema(parse(ISS.basic_schema), {}))
+            rename_query(parse(query_string), rename_schema(basic_schema, {}))
 
     def test_invalid_fragment(self):
         query_string = dedent('''\
             {
-              luke: Human(id: "1000") {
-                ...HumanFragment
-              }
-              leia: Human(id: "1003") {
-                ...HumanFragment
+              Animal {
+                ...AnimalFragment
               }
             }
 
-            fragment HumanFragment on Human {
-              id
-            }
-        ''')
-        with self.assertRaises(GraphQLValidationError):
-            rename_query(parse(query_string), rename_schema(parse(ISS.basic_schema), {}))
-
-    def test_invalid_nested_fragments(self):
-        query_string = dedent('''\
-            {
-              Human {
-                ...HumanInfoFragment
-              }
-            }
-
-            fragment HumanInfoFragment on Human {
+            fragment AnimalFragment on Animal {
               name
-              ...HumanAgeFragment
-            }
-
-            fragment HumanAgeFragment on Human {
-              age
             }
         ''')
         with self.assertRaises(GraphQLValidationError):
-            rename_query(parse(query_string), rename_schema(parse(ISS.basic_schema), {}))
+            rename_query(parse(query_string), rename_schema(basic_schema, {}))
