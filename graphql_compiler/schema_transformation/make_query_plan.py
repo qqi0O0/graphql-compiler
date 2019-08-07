@@ -104,26 +104,26 @@ def make_query_plan(root_sub_query_node):
 
         For each child connection contained in sub_query_node, create a new SubQueryPlan for
         the corresponding child SubQueryNode, add appropriate @output and @filter directives
-        to the parent and child ASTs, and attach the new SubQueryPlan to the input
-        sub_query_plan.
+        to the parent and child ASTs, and attach the new SubQueryPlan to the list of children
+        of the input sub query plan.
 
         Args:
-            sub_query_node: SubQueryNode, whose children are copied over; not modified by this
-                            function
+            sub_query_node: SubQueryNode, whose descendents are copied over onto sub_query_plan.
+                            It is not modified by this function
             sub_query_plan: SubQueryPlan, whose list of child query plans and query AST are
                             modified
         """
-        parent_query_ast = sub_query_plan.query_ast  # Can modify and add directives
+        parent_query_ast = sub_query_plan.query_ast  # Can modify and add directives directly
 
         # Iterate through child connections of query node
         for child_query_connection in sub_query_node.child_query_connections:
             child_sub_query_node = child_query_connection.sink_query_node
             child_query_ast = deepcopy(child_sub_query_node.query_ast)  # Prevent modifying input
 
-            parent_field = get_node_by_path(
+            parent_field = _get_node_by_path(
                 parent_query_ast, child_query_connection.source_field_path
             )
-            child_field = get_node_by_path(
+            child_field = _get_node_by_path(
                 child_query_ast, child_query_connection.sink_field_path
             )
 
@@ -133,7 +133,6 @@ def make_query_plan(root_sub_query_node):
 
             # Add @filter to child
             # Local variable in @filter will be named the same as the parent output
-            # Only add, don't change existing filters?
             child_filter_directive = _get_in_collection_filter_directive(parent_out_name)
             child_field.directives.append(child_filter_directive)
 
@@ -154,7 +153,7 @@ def make_query_plan(root_sub_query_node):
             )
             output_join_descriptors.append(new_output_join_descriptor)
 
-            # Recursively repeat on child SubQueryPlan
+            # Recursively repeat on child SubQueryPlans
             _make_query_plan_helper(child_sub_query_node, child_sub_query_plan)
 
     _make_query_plan_helper(root_sub_query_node, root_sub_query_plan)
@@ -198,15 +197,45 @@ def _get_in_collection_filter_directive(input_filter_name):
     )
 
 
-def get_node_by_path(ast, path):
+def _get_node_by_path(ast, path):
+    """Return the Node object in the input AST pointed to by the input path.
+
+    Args:
+        ast: Node
+        path: List[Union[int, str]], the list of attribute names (if str) or list indices (if
+              int) used to access a node in the input AST.
+    """
     target_node = ast
     for key in path:
+        # If both AST and path are produced normally by split_query, the below errors will only
+        # occur due to programming bugs.
         if isinstance(key, str):
-            target_node = getattr(target_node, key)
+            try:
+                target_node = getattr(target_node, key)
+            except AttributeError:
+                raise AssertionError(
+                    u'The path {} cannot be used to index into AST {}. The attribute {} '
+                    u'cannot be found in AST node {}.'.format(path, ast, key, target_node)
+                )
         elif isinstance(key, int):
-            target_node = target_node[key]
+            if not isinstance(target_node, list):
+                raise AssertionError(
+                    u'The path {} cannot be used to index into AST {}. The key {} is a list '
+                    u'index, but the corresponding component {} is not a list.'
+                    u''.format(path, ast, key, target_node)
+                )
+            try:
+                target_node = target_node[key]
+            except IndexError:
+                raise AssertionError(
+                    u'The path {} cannot be used to index into AST {}. The key {} is out of '
+                    u'range for {}.'.format(path, ast, key, target_node)
+                )
         else:
-            raise AssertionError(u'')
+            raise AssertionError(
+                u'The path {} used for accessing a particular node in an AST should only '
+                u'contain int and str elements.'.format(path)
+            )
     return target_node
 
 
