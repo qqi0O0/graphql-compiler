@@ -67,7 +67,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name
+                uuid
               }
             }
         ''')
@@ -77,7 +77,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age
-                creature_name
+                id
               }
             }
         ''')
@@ -93,7 +93,7 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Animal {
-                name @output(out_name: "result")
+                uuid @output(out_name: "result")
                 out_Animal_Creature {
                   age
                 }
@@ -103,7 +103,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name @output(out_name: "result")
+                uuid @output(out_name: "result")
               }
             }
         ''')
@@ -113,7 +113,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age
-                creature_name
+                id
               }
             }
         ''')
@@ -130,7 +130,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Animal {
                 out_Animal_Creature {
-                  creature_name @output(out_name: "result")
+                  id @output(out_name: "result")
                   age @output(out_name: "age")
                 }
               }
@@ -139,7 +139,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name
+                uuid
               }
             }
         ''')
@@ -148,7 +148,7 @@ class TestSplitQuery(unittest.TestCase):
         child_str = dedent('''\
             {
               Creature {
-                creature_name @output(out_name: "result")
+                id @output(out_name: "result")
                 age @output(out_name: "age")
               }
             }
@@ -165,9 +165,9 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Animal {
-                name
+                uuid
                 out_Animal_Creature {
-                  creature_name @output(out_name: "result")
+                  id @output(out_name: "result")
                   age @output(out_name: "age")
                 }
               }
@@ -176,7 +176,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name
+                uuid
               }
             }
         ''')
@@ -185,7 +185,7 @@ class TestSplitQuery(unittest.TestCase):
         child_str = dedent('''\
             {
               Creature {
-                creature_name @output(out_name: "result")
+                id @output(out_name: "result")
                 age @output(out_name: "age")
               }
             }
@@ -219,7 +219,7 @@ class TestSplitQuery(unittest.TestCase):
               Animal {
                 out_Animal_ParentOf {
                   color @output(out_name: "color")
-                  name
+                  uuid
                 }
               }
             }
@@ -233,7 +233,7 @@ class TestSplitQuery(unittest.TestCase):
                 out_Creature_ParentOf {
                   age @output(out_name: "age2")
                 }
-                creature_name
+                id
               }
             }
         ''')
@@ -258,7 +258,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name @optional
+                uuid @optional
               }
             }
         ''')
@@ -268,7 +268,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age @output(out_name: "age")
-                creature_name
+                id
               }
             }
         ''')
@@ -287,14 +287,14 @@ class TestSplitQuery(unittest.TestCase):
                 out_Animal_Creature @optional {
                   age @output(out_name: "age")
                 }
-                name @optional
+                uuid @optional
               }
             }
         ''')
         parent_str = dedent('''\
             {
               Animal {
-                name @optional
+                uuid @optional
               }
             }
         ''')
@@ -305,7 +305,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age @output(out_name: "age")
-                creature_name
+                id
               }
             }
         ''')
@@ -321,7 +321,7 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Animal {
-                name @output(out_name: "result")
+                uuid @output(out_name: "result")
                 out_Animal_Creature @optional {
                   age @output(out_name: "age")
                 }
@@ -331,7 +331,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name @output(out_name: "result") @optional
+                uuid @output(out_name: "result") @optional
               }
             }
         ''')
@@ -341,7 +341,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age @output(out_name: "age")
-                creature_name
+                id
               }
             }
         ''')
@@ -421,7 +421,7 @@ class TestSplitQuery(unittest.TestCase):
               Entity {
                 uuid
                 ... on Animal {
-                  name
+                  uuid
                 }
               }
             }
@@ -432,7 +432,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age @output(out_name: "age")
-                creature_name
+                id
               }
             }
         ''')
@@ -459,7 +459,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                name
+                uuid
               }
             }
         ''')
@@ -469,7 +469,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Cat {
                 age @output(out_name: "age")
-                creature_name
+                id
               }
             }
         ''')

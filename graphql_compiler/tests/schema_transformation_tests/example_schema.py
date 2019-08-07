@@ -25,8 +25,8 @@ schema {
 }
 
 type Creature {
-  creature_name: String
   age: Int
+  id: String
   out_Creature_ParentOf: [Creature]
 }
 
@@ -47,12 +47,12 @@ basic_merged_schema = merge_schemas(
             outbound_field_reference=FieldReference(
                 schema_id='first',
                 type_name='Animal',
-                field_name='name',
+                field_name='uuid',
             ),
             inbound_field_reference=FieldReference(
                 schema_id='second',
                 type_name='Creature',
-                field_name='creature_name'
+                field_name='id'
             ),
             out_edge_only=False,
         ),
@@ -66,12 +66,12 @@ schema {
 }
 
 interface Creature {
-  creature_name: String
+  id: String
   age: Int
 }
 
 type Cat implements Creature {
-  creature_name: String
+  id: String
   age: Int
 }
 
@@ -93,12 +93,12 @@ interface_merged_schema = merge_schemas(
             outbound_field_reference=FieldReference(
                 schema_id='first',
                 type_name='Animal',
-                field_name='name',
+                field_name='uuid',
             ),
             inbound_field_reference=FieldReference(
                 schema_id='second',
                 type_name='Creature',
-                field_name='creature_name'
+                field_name='id'
             ),
             out_edge_only=False,
         ),
@@ -134,12 +134,12 @@ schema {
 }
 
 type Creature {
-  creature_name: String
+  id: String
   age: Int
 }
 
 type Cat {
-  creature_name: String
+  id: String
   age: Int
 }
 
@@ -166,12 +166,12 @@ union_merged_schema = merge_schemas(
             outbound_field_reference=FieldReference(
                 schema_id='first',
                 type_name='Animal',
-                field_name='name',
+                field_name='uuid',
             ),
             inbound_field_reference=FieldReference(
                 schema_id='second',
                 type_name='Creature',
-                field_name='creature_name'
+                field_name='id'
             ),
             out_edge_only=False,
         ),
