@@ -9,23 +9,45 @@ from .example_schema import basic_merged_schema
 
 
 class TestModifySplitQuery(unittest.TestCase):
-    def get_example_sub_query_node(self):
+    def get_example_sub_query_node(self, existing_parent_directives, existing_child_directives):
         parent_str = dedent('''\
             {
               Animal {
-                name
+                uuid{}
               }
             }
-        ''')
+        ''').format(existing_parent_directives)
         child_str = dedent('''\
             {
               Creature {
-                creature_name
-                BACK
+                age @output(out_name: "result")
+                id{}
               }
             }
-        ''')
-        parent_node = SubQueryNode(
+        ''').format(existing_child_directives)
+        parent_node = SubQueryNode(parse(parent_str))
+        child_node = SubQueryNode(parse(parent_str))
+        parent_node.schema_id = 'first'
+        child_node.schema_id = 'second'
+        parent_field_path = [
+            'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections', 0
+        ]
+        child_field_path = [
+            'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections', 1
+        ]
+        parent_to_child_connection = QueryConnection(
+            sink_query_node=child_node,
+            source_field_path=parent_field_path,
+            sink_field_path=child_field_path,
+        )
+        child_to_parent_connection = QueryConnection(
+            sink_query_node=parent_node,
+            source_field_path=child_field_path,
+            sink_field_path=parent_field_path,
+        )
+        parent_node.child_query_connections.append(parent_to_child_connection)
+        child_node.parent_query_connection = child_to_parent_connection
+        return parent_node
 
     # TODO: Test original unmodified
     def test_basic_modify(self):
