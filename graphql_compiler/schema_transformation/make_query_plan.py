@@ -248,14 +248,16 @@ def print_query_plan(query_plan_descriptor):
         line_separation = u'\n' + u' ' * 8 * depth
         query_plan_str += line_separation
 
-        query_str = 'Execute in schema named "{}":\n'.format(query_plan.schema_id)
+        query_str = u'Execute in schema named "{}":\n'.format(query_plan.schema_id)
         query_str += print_ast(query_plan.query_ast)
         query_str = query_str.replace(u'\n', line_separation)
         query_plan_str += query_str
 
-    query_plan_str += '\n\n'
-    query_plan_str += str(query_plan_descriptor.intermediate_output_names) + '\n\n'
-    query_plan_str += str(query_plan_descriptor.output_join_descriptors) + '\n'
+    query_plan_str += u'\n\n'
+    query_plan_str += u'Join together outputs as follows: '
+    query_plan_str += str(query_plan_descriptor.output_join_descriptors) + u'\n\n'
+    query_plan_str += u'Remove the following outputs at the end: '
+    query_plan_str += str(query_plan_descriptor.intermediate_output_names) + u'\n'
 
     return query_plan_str
 
