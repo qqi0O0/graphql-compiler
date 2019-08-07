@@ -26,6 +26,12 @@ QueryConnection = namedtuple(
 )
 
 
+
+# TODO: separate out into validation and splitting again
+# validation checks that directives are supported, and property fields occur before vertex
+# fields
+
+
 class SubQueryNode(object):
     def __init__(self, query_ast):
         """Represents one piece of a larger query, targeting one schema.
@@ -61,14 +67,11 @@ def split_query(query_ast, merged_schema_descriptor):
     Returns:
         SubQueryNode, the root of the tree of QueryNodes. Each node contains an AST
         representing a part of the overall query, targeting a specific schema
+
+    Raises:
+        GraphQLValidationError if: TODO
     """
-    # TODO: there are assumptions on the query ast here -- all property fields occur before
-    # all vertex fields
-    built_in_validation_errors = validate(merged_schema_descriptor.schema, query_ast)
-    if len(built_in_validation_errors) > 0:
-        raise GraphQLValidationError(
-            u'AST does not validate: {}'.format(built_in_validation_errors)
-        )
+    _check_query_is_valid_to_split(merged_schema_descriptor.schema, query_ast)
 
     query_ast = deepcopy(query_ast)
     # If schema directives are correctly represented in the schema object, type_info is all
@@ -95,6 +98,70 @@ def split_query(query_ast, merged_schema_descriptor):
         )
 
     return root_query_node
+
+
+def _check_query_is_valid_to_split(schema, query_ast):
+    """Check the query is valid for splitting.
+
+    In particular, ensure that the query validates against the schema, does not contain
+    unsupported directives, and that in each selection, all property fields occur before all
+    vertex fields.
+
+    Args:
+        schema: GraphQLSchema object
+        query_ast: Document
+
+    Raises:
+        GraphQLValidationError if the query doesn't validate against the schema, contains
+        unsupported directives, or some property field occurs after a vertex field in some
+        selection
+    """
+    # Check builtin errors
+    built_in_validation_errors = validate(schema, query_ast)
+    if len(built_in_validation_errors) > 0:
+        raise GraphQLValidationError(
+            u'AST does not validate: {}'.format(built_in_validation_errors)
+        )
+
+    # Check no bad directives and fields are in order
+    visitor = CheckQueryIsValidToSplit()
+    visit(query_ast, visitor)
+
+
+class CheckQueryIsValidToSplit(Visitor):
+    supported_directives = frozenset(('filter', 'output', 'optional', 'stitch'))
+    def enter_Directive(self, node, *args):
+        """Check that the directive is supported."""
+        if node.name.value not in self.supported_directives:
+            raise GraphQLValidationError(
+                u'Directive "{}" is not yet supported, only "{}" are currently '
+                u'supported.'.format(node.name.value, self.supported_directives)
+            )
+
+    def enter_SelectionSet(self, node, *args):
+        past_property_fields = False
+        for field in node.selections:
+            if _is_property_field(field):
+                if past_property_fields:
+                    raise GraphQLValidationError(
+                        u'Some property field comes after some vertex field'  # TODO better message
+                    )
+            else:
+                past_property_fields = True
+
+ 
+def _is_property_field(field):
+    """Return True if field is a property field, False otherwise."""
+    if not isinstance(field, ast_types.Field):
+        raise AssertionError(u'')  # This is going to error at None, don't use None but delete
+    if (
+        field.selection_set is None or
+        field.selection_set.selections is None or
+        field.selection_set.selections == []
+    ):
+        return True
+    else:
+        return False
 
 
 def _get_edge_to_stitch_fields(merged_schema_descriptor):
@@ -129,9 +196,6 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
                     edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
 
     return edge_to_stitch_fields
-
-
-SUPPORTED_DIRECTIVES = frozenset(('filter', 'output', 'optional', 'stitch'))
 
 
 class SplitQueryVisitor(Visitor):
@@ -199,7 +263,7 @@ class SplitQueryVisitor(Visitor):
 
         # Get path to the property field used in stitch in parent, creating a new field if needed
         parent_field_path = self._process_parent_field_get_field_path(
-            node, parent, path, parent_field_name
+            node, key, parent, path, parent_field_name
         )
         # TODO: can't replace fields so simply, all property fields must come before all
         # vertex fields
@@ -224,24 +288,6 @@ class SplitQueryVisitor(Visitor):
         # existed, we'd like to return BREAK. Can check if parent[key] is None, but that
         # feels rather inelegant
         return False
-
-    def _check_directives_supported(self, directives):
-        """Check that all directives are supported."""
-        if directives is None:  # nothing to check
-            return
-        if not isinstance(directives, list):
-            raise AssertionError(u'The input directives "{}" must be a list.'.format(directives))
-        for directive in directives:
-            if not isinstance(directive, ast_types.Directive):
-                raise AssertionError(
-                    u'Each element of the input directives must be a Directive object, but '
-                    u'it is "{}" of type "{}".'.format(directive, type(directive))
-                )
-            if directive.name.value not in SUPPORTED_DIRECTIVES:
-                raise GraphQLValidationError(
-                    u'Directive "{}" is not yet supported, only "{}" are currently '
-                    u'supported.'.format(directive.name.value, SUPPORTED_DIRECTIVES)
-                )
 
     def _try_get_stitch_fields(self, node):
         """Return names of parent and child stitch fields, or None if there is no stitch."""
@@ -325,7 +371,7 @@ class SplitQueryVisitor(Visitor):
 
         return child_type_name, child_selection_set
 
-    def _process_parent_field_get_field_path(self, node, parent, path, parent_field_name):
+    def _process_parent_field_get_field_path(self, node, key, parent, path, parent_field_name):
         # TODO: docstrings
         # TODO: can't replace fields so simply, all property fields must come before all
         # vertex fields
@@ -338,6 +384,7 @@ class SplitQueryVisitor(Visitor):
         )
         # Process parent field, and get parent field path
         if parent_field is None:  # No existing source property field
+            # Delete current field, 
             # Change current field to stitch's source property field
             node.name.value = parent_field_name
             node.selection_set = None
@@ -351,6 +398,9 @@ class SplitQueryVisitor(Visitor):
             # Deleting the field interferes with the visitor's traversal and any existing field
             # paths, so replace this node by None
             # Well, it's possible to return the BREAK keyword and kill the branch...
+            # TODO: don't just replace by None, actually delete. Can achieve by replace by
+            # None here, and later on check whether current parent[key] is None and returning
+            # BREAK if so
             parent[key] = None
             parent_field_path = copy(path)
             parent_field_path[-1] = parent_field_index  # Change last (current node) index
@@ -362,7 +412,7 @@ class SplitQueryVisitor(Visitor):
         # TODO: docstrings
         # Check for existing field in child
         child_field, child_field_index = try_get_ast_and_index(
-            child_selection_set.selections, child_field_name, ast_types.Field
+            child_selections, child_field_name, ast_types.Field
         )
         # Process child field, and get child field path
         if child_field is None:
@@ -370,16 +420,43 @@ class SplitQueryVisitor(Visitor):
             # TODO: can't append for the same reason as above, may be behind vertex fields
             # find the last property field and insert behind it
             child_field = ast_types.Field(name=ast_types.Name(value=child_field_name))
-            child_selection_set.selections.append(child_field)
+            child_selections.append(child_field)
             child_field_path = [
                 'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                'selections', len(child_selection_set.selections) - 1
+                'selections', len(child_selections) - 1
             ]
         else:
             child_field_path = [
                 'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                 'selections', child_field_index
             ]
+
+        return child_field_path
+
+    def _insert_new_property_field(self, selections, new_field):
+        """Insert new_field into selections after all property fields and before all vertex fields.
+
+        In selections, all property fields, if any, must occur before all vertex fields, if any.
+
+        Args:
+            selections: List[Field], where all property fields occur before all vertex fields.
+                        Modified by this function
+            new_field: Field object, to be inserted into selections
+
+        Raises:
+            GraphQLValidationError if some property field occurs after some vertex field in
+            selections
+        """
+        index_to_insert = None
+        for index, selection in enumerate(selections):
+            if self.is_property_field(selection):
+                if index_to_insert is not None:
+                    raise GraphQLValidationError(u'')  # TODO
+            else:
+                if index_to_insert is None:
+                    index_to_insert = index
+        selections.insert(index_to_insert, new_field)
+
 
     def _add_directives_from_edge(self, field, new_directives):
         """Add new directives to field as necessary, raising error for illegal duplicates.
