@@ -10,7 +10,8 @@ from .example_schema import basic_merged_schema, interface_merged_schema, union_
 
 
 class TestSplitQuery(unittest.TestCase):
-    # Test original unmodified
+    # TODO: Test original unmodified
+    # TODO: make these queries all legal with @output and such
     def _get_unique_element(self, elements_list):
         self.assertIsInstance(elements_list, list)
         self.assertEqual(len(elements_list), 1)
@@ -224,6 +225,7 @@ class TestSplitQuery(unittest.TestCase):
         ''')
         parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                              'selections', 0, 'selection_set', 'selections', 1]
+        # TODO: below is illegal
         child_str = dedent('''\
             {
               Creature {
@@ -576,6 +578,7 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
+        # TODO: below is also illegal
         query_piece2_str = dedent('''\
             {
               Creature {
@@ -628,3 +631,49 @@ class TestSplitQuery(unittest.TestCase):
         self._check_query_node_edge(query_piece2, 1, query_piece4)
         self.assertEqual(print_ast(query_piece3.query_ast), query_piece3_str)
         self.assertEqual(print_ast(query_piece4.query_ast), query_piece4_str)
+
+    def test_cross_schema_edge_field_after_normal_vertex_field(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_ParentOf {
+                  color @output(out_name: "color")
+                }
+                out_Animal_Creature {
+                  age
+                }
+              }
+            }
+        ''')
+        # TODO: The string below is illegal! Property field comes after vertex field
+        parent_str = dedent('''\
+            {
+              Animal {
+                out_Animal_ParentOf {
+                  color @output(out_name: "color")
+                }
+                uuid
+              }
+            }
+        ''')
+        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                             'selections', 1]
+        child_str = dedent('''\
+            {
+              Creature {
+                age
+                id
+              }
+            }
+        ''')
+        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                            'selections', 1]
+
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
+
+    # TODO: multiple stitching on same property field (two edges to two schemas using same field)
+    # TODO: chain: a to b and b to c, using same field on b
+    # TODO: back and forth on an edge

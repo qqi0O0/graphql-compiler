@@ -62,6 +62,8 @@ def split_query(query_ast, merged_schema_descriptor):
         SubQueryNode, the root of the tree of QueryNodes. Each node contains an AST
         representing a part of the overall query, targeting a specific schema
     """
+    # TODO: there are assumptions on the query ast here -- all property fields occur before
+    # all vertex fields
     built_in_validation_errors = validate(merged_schema_descriptor.schema, query_ast)
     if len(built_in_validation_errors) > 0:
         raise GraphQLValidationError(
@@ -195,47 +197,20 @@ class SplitQueryVisitor(Visitor):
 
         parent_field_name, child_field_name = self._try_get_stitch_fields(node)
 
-        # Check for existing field in parent
-        parent_field, parent_field_index = try_get_ast_and_index(
-            parent, parent_field_name, ast_types.Field
+        # Get path to the property field used in stitch in parent, creating a new field if needed
+        parent_field_path = self._process_parent_field_get_field_path(
+            node, parent, path, parent_field_name
         )
-        # Process parent field, and get parent field path
-        if parent_field is None:  # No existing source property field
-            # Change current field to stitch's source property field
-            node.name.value = parent_field_name
-            node.selection_set = None
-            parent_field_path = copy(path)
-            # Valid existing directives are passed down
-            edge_directives = node.directives
-            node.directives = []
-            self._add_directives_from_edge(node, edge_directives)
-        else:
-            # Remove stump field, pass its directives to the stitch source property field
-            # Deleting the field interferes with the visitor's traversal and any existing field
-            # paths, so replace this node by None
-            parent[key] = None
-            parent_field_path = copy(path)
-            parent_field_path[-1] = parent_field_index  # Change last (current node) index
-            self._add_directives_from_edge(parent_field, node.directives)
+        # TODO: can't replace fields so simply, all property fields must come before all
+        # vertex fields
+        # Also just don't directly edit. Make new function that takes in a selection set,
+        # makes a shallow copy, and adds the new property field behind the last property field
 
-        # Check for existing field in child
-        child_field, child_field_index = try_get_ast_and_index(
-            child_selection_set.selections, child_field_name, ast_types.Field
+        # Get path to the property field used in stitch in parent, creating a new field if needed
+        child_field_path = self._process_child_field_get_field_path(
+            child_selection_set.selections, child_field_name
         )
-        # Process child field, and get child field path
-        if child_field is None:
-            # Add new field to end of child's selection set
-            child_field = ast_types.Field(name=ast_types.Name(value=child_field_name))
-            child_selection_set.selections.append(child_field)
-            child_field_path = [
-                'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                'selections', len(child_selection_set.selections) - 1
-            ]
-        else:
-            child_field_path = [
-                'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                'selections', child_field_index
-            ]
+
         # Create child AST around the pruned branch, and child SubQueryNode around the AST
         child_query_ast = self._create_query_document(child_type_name, child_selection_set)
         child_query_node = SubQueryNode(child_query_ast)
@@ -245,6 +220,9 @@ class SplitQueryVisitor(Visitor):
                                     child_field_path)
 
         # Returning False causes `visit` to skip visiting the rest of the branch
+        # Have a way of deciding between returning False and BREAK? If parent field already
+        # existed, we'd like to return BREAK. Can check if parent[key] is None, but that
+        # feels rather inelegant
         return False
 
     def _check_directives_supported(self, directives):
@@ -346,6 +324,62 @@ class SplitQueryVisitor(Visitor):
             child_selection_set = type_coercion_inline_fragment.selection_set
 
         return child_type_name, child_selection_set
+
+    def _process_parent_field_get_field_path(self, node, parent, path, parent_field_name):
+        # TODO: docstrings
+        # TODO: can't replace fields so simply, all property fields must come before all
+        # vertex fields
+        # Also just don't directly edit. Make new function that takes in a selection set,
+        # makes a shallow copy, and adds the new property field behind the last property field
+
+        # Check for existing field in parent
+        parent_field, parent_field_index = try_get_ast_and_index(
+            parent, parent_field_name, ast_types.Field
+        )
+        # Process parent field, and get parent field path
+        if parent_field is None:  # No existing source property field
+            # Change current field to stitch's source property field
+            node.name.value = parent_field_name
+            node.selection_set = None
+            parent_field_path = copy(path)
+            # Valid existing directives are passed down
+            edge_directives = node.directives
+            node.directives = []
+            self._add_directives_from_edge(node, edge_directives)
+        else:
+            # Remove stump field, pass its directives to the stitch source property field
+            # Deleting the field interferes with the visitor's traversal and any existing field
+            # paths, so replace this node by None
+            # Well, it's possible to return the BREAK keyword and kill the branch...
+            parent[key] = None
+            parent_field_path = copy(path)
+            parent_field_path[-1] = parent_field_index  # Change last (current node) index
+            self._add_directives_from_edge(parent_field, node.directives)
+
+        return parent_field_path
+
+    def _process_child_field_get_field_path(self, child_selections, child_field_name):
+        # TODO: docstrings
+        # Check for existing field in child
+        child_field, child_field_index = try_get_ast_and_index(
+            child_selection_set.selections, child_field_name, ast_types.Field
+        )
+        # Process child field, and get child field path
+        if child_field is None:
+            # Add new field to end of child's selection set
+            # TODO: can't append for the same reason as above, may be behind vertex fields
+            # find the last property field and insert behind it
+            child_field = ast_types.Field(name=ast_types.Name(value=child_field_name))
+            child_selection_set.selections.append(child_field)
+            child_field_path = [
+                'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                'selections', len(child_selection_set.selections) - 1
+            ]
+        else:
+            child_field_path = [
+                'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                'selections', child_field_index
+            ]
 
     def _add_directives_from_edge(self, field, new_directives):
         """Add new directives to field as necessary, raising error for illegal duplicates.
