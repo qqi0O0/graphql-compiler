@@ -6,12 +6,10 @@ from graphql import parse, print_ast
 
 from ...exceptions import GraphQLValidationError
 from ...schema_transformation.split_query import split_query
-from .example_schema import basic_merged_schema, interface_merged_schema
+from .example_schema import basic_merged_schema, interface_merged_schema, union_merged_schema
 
 
 class TestSplitQuery(unittest.TestCase):
-    # Add tests for interface and union
-    # Proper way to test this is to test observers (query plan, etc)
     # Test original unmodified
     def _get_unique_element(self, elements_list):
         self.assertIsInstance(elements_list, list)
@@ -20,7 +18,7 @@ class TestSplitQuery(unittest.TestCase):
 
     def _check_query_node_edge(self, parent_query_node, parent_to_child_edge_index,
                                child_query_node):
-        """Check the edge between parent and child are symmetric."""
+        """Check the edge between parent and child is symmetric."""
         parent_to_child_connection = \
             parent_query_node.child_query_connections[parent_to_child_edge_index]
         child_to_parent_connection = child_query_node.parent_query_connection
@@ -165,7 +163,7 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Animal {
-                uuid
+                uuid @filter(op_name: "in_collection", value: ["$uuids"])
                 out_Animal_Creature {
                   id @output(out_name: "result")
                   age @output(out_name: "age")
@@ -176,7 +174,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                uuid
+                uuid @filter(op_name: "in_collection", value: ["$uuids"])
               }
             }
         ''')
@@ -198,7 +196,7 @@ class TestSplitQuery(unittest.TestCase):
             child_str, child_field_path, 'second'
         )
 
-    def test_more_complex_structure(self):
+    def test_nested_query(self):
         query_str = dedent('''\
             {
               Animal {
@@ -206,7 +204,7 @@ class TestSplitQuery(unittest.TestCase):
                   color @output(out_name: "color")
                   out_Animal_Creature {
                     age @output(out_name: "age1")
-                    out_Creature_ParentOf {
+                    friend {
                       age @output(out_name: "age2")
                     }
                   }
@@ -230,7 +228,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age @output(out_name: "age1")
-                out_Creature_ParentOf {
+                friend {
                   age @output(out_name: "age2")
                 }
                 id
@@ -481,8 +479,152 @@ class TestSplitQuery(unittest.TestCase):
             child_str, child_field_path, 'second'
         )
 
+    def test_invalid_interface_type_coercion(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  ... on Company {
+                    age @output(out_name: "age")
+                  }
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), interface_merged_schema)
+
+
     def test_union_type_coercion_after_edge(self):
-        pass
-        # TODO
-        # TODO: tests for interfaces and union type coercions
-        # TODO: tests where the structure is more than just parent-child relation
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  ... on Cat {
+                    age @output(out_name: "age")
+                  }
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Animal {
+                uuid
+              }
+            }
+        ''')
+        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                             'selections', 0]
+        child_str = dedent('''\
+            {
+              Cat {
+                age @output(out_name: "age")
+                id
+              }
+            }
+        ''')
+        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                            'selections', 1]
+
+        self._check_simple_parent_child_structure(
+            interface_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
+
+    def test_invalid_union_type_coercion(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  ... on Company {
+                    age @output(out_name: "age")
+                  }
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), union_merged_schema)
+
+    def test_complex_query_structure(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                color @output(out_name: "color")
+                out_Animal_Creature {
+                  age @output(out_name: "age")
+                  in_Animal_Creature {
+                    description @output(out_name: "description")
+                  }
+                  friend {
+                    in_Animal_Creature {
+                      description @output(out_name: "friend_description")
+                    }
+                  }
+                }
+              }
+            }
+        ''')
+        base_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                           'selections']
+        query_piece1_str = dedent('''\
+            {
+              Animal {
+                color @output(out_name: "color")
+                uuid
+              }
+            }
+        ''')
+        query_piece2_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                friend {
+                  id
+                }
+                id
+              }
+            }
+        ''')
+        query_piece3_str = dedent('''\
+            {
+              Animal {
+                description @output(out_name: "description")
+                uuid
+              }
+            }
+        ''')
+        query_piece4_str = dedent('''\
+            {
+              Animal {
+                description @output(out_name: "friend_description")
+                uuid
+              }
+            }
+        ''')
+        query_piece1 = split_query(parse(query_str), basic_merged_schema)
+        self.assertEqual(print_ast(query_piece1.query_ast), query_piece1_str)
+        self.assertEqual(len(query_piece1.child_query_connections), 1)
+        query_piece2 = query_piece1.child_query_connections[0].sink_query_node
+        self.assertEqual(query_piece1.child_query_connections[0].source_field_path,
+                         base_field_path+[1])
+        self.assertEqual(query_piece1.child_query_connections[0].sink_field_path,
+                         base_field_path+[3])  # 3 instead of 2, due to None in position 1
+        self._check_query_node_edge(query_piece1, 0, query_piece2)
+        self.assertEqual(print_ast(query_piece2.query_ast), query_piece2_str)
+        self.assertEqual(len(query_piece2.child_query_connections), 2)
+        query_piece3 = query_piece2.child_query_connections[0].sink_query_node
+        self.assertEqual(query_piece2.child_query_connections[0].source_field_path,
+                         base_field_path+[3])
+        self.assertEqual(query_piece2.child_query_connections[0].sink_field_path,
+                         base_field_path+[1])
+        query_piece4 = query_piece2.child_query_connections[1].sink_query_node
+        self.assertEqual(query_piece2.child_query_connections[1].source_field_path,
+                         base_field_path+[2, 'selection_set', 'selections', 0])
+        self.assertEqual(query_piece2.child_query_connections[1].sink_field_path,
+                         base_field_path+[1])
+        self._check_query_node_edge(query_piece2, 0, query_piece3)
+        self._check_query_node_edge(query_piece2, 1, query_piece4)
+        self.assertEqual(print_ast(query_piece3.query_ast), query_piece3_str)
+        self.assertEqual(print_ast(query_piece4.query_ast), query_piece4_str)

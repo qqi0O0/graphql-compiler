@@ -27,7 +27,7 @@ schema {
 type Creature {
   age: Int
   id: String
-  out_Creature_ParentOf: [Creature]
+  friend: [Creature]
 }
 
 type SchemaQuery {
@@ -75,9 +75,15 @@ type Cat implements Creature {
   age: Int
 }
 
+type Company {
+  id: String
+  age: Int
+}
+
 type SchemaQuery {
   Creature: Creature
   Cat: Cat
+  Company: Company
 }
 '''
 
@@ -143,11 +149,17 @@ type Cat {
   age: Int
 }
 
+type Company {
+  id: String
+  age: Int
+}
+
 union CreatureOrCat = Creature | Cat
 
 type SchemaQuery {
   Creature: Creature
   Cat: Cat
+  Company: Company
 }
 '''
 
