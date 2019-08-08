@@ -1067,4 +1067,22 @@ class TestSplitQuery(unittest.TestCase):
         query_node = split_query(parse(query_str), three_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
 
+    def test_very_sad(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                name
+                friend {
+                  out_E1 {
+                    age
+                  }
+                }
+                out_E2 {
+                  color
+                }
+              }
+            }
+        ''')
+        # Path completely fails
+
     # TODO: back and forth on an edge

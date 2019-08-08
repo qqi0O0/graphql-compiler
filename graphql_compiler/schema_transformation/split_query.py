@@ -13,6 +13,10 @@ from ..exceptions import GraphQLValidationError
 from .utils import SchemaStructureError, try_get_ast, try_get_ast_and_index
 
 
+# NOTE: proposal: add unique @output at this stage, keep track of where fields are by
+# keeping track of these uniquely named outputs
+
+
 QueryConnection = namedtuple(
     'QueryConnection', (
         'sink_query_node',  # SubQueryNode
@@ -141,8 +145,6 @@ class CheckQueryIsValidToSplit(Visitor):
         """Check property fields occur before vertex fields and type coercions in selection."""
         past_property_fields = False  # Whether we're seen a vertex field
         for field in node.selections:
-#            if field is None:
-#                continue
             if _is_property_field(field):
                 if past_property_fields:
                     raise GraphQLValidationError(
@@ -234,7 +236,6 @@ class SplitQueryVisitor(Visitor):
         self.type_name_to_schema_id = type_name_to_schema_id
         self.root_query_node = root_query_node
 
-    # TODO: enter_SelectionSet instead? Much more freedom and control over the selections list
     def enter_Field(self, node, key, parent, path, *args):
         """Check for split at the current field, creating a new SubQueryNode if needed.
 
@@ -516,9 +517,6 @@ def _insert_new_property_field(selections, new_field):
     """
     index_to_insert = None
     for index, selection in enumerate(selections):
-        if selection is None:  # Unfortunate holes left over by removing edge fields
-            # Fine to count as either property or non-property
-            continue
         if _is_property_field(selection):
             if index_to_insert is not None:
                 raise AssertionError(
