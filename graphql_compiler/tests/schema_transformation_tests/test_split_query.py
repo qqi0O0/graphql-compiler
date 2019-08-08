@@ -61,10 +61,10 @@ class TestSplitQuery(unittest.TestCase):
 
         self.assertIs(parent_to_child_connection.sink_query_node, child_query_node)
         self.assertIs(child_to_parent_connection.sink_query_node, parent_query_node)
-        self.assertEqual(parent_to_child_connection.source_field_path,
-                         child_to_parent_connection.sink_field_path)
-        self.assertEqual(parent_to_child_connection.sink_field_path,
-                         child_to_parent_connection.source_field_path)
+        self.assertEqual(parent_to_child_connection.source_field_path, parent_field_path)
+        self.assertEqual(child_to_parent_connection.sink_field_path, parent_field_path)
+        self.assertEqual(parent_to_child_connection.sink_field_path, child_field_path)
+        self.assertEqual(child_to_parent_connection.source_field_path, child_field_path)
 
     # TODO: make these queries all legal with @output and such
     # test for bad property and vertex field order
@@ -175,7 +175,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_root_selections = parent_ast.definitions[0].selection_set.selections[0].\
                 selection_set.selections
         self.assertEqual(len(parent_root_selections), 1)  # check None in second position removed
-        print(query_node.query_ast)
+        print(query_node.query_ast)  # TODO
 
     def test_existing_output_field_in_child(self):
         query_str = dedent('''\
@@ -705,7 +705,7 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        example_query_node = ExampleQueryNode(  # TODO
+        example_query_node = ExampleQueryNode(
             query_str=parent_str,
             schema_id='first',
             child_query_nodes_and_paths=[
@@ -717,7 +717,16 @@ class TestSplitQuery(unittest.TestCase):
                     ),
                     BASE_FIELD_PATH + [0],
                     BASE_FIELD_PATH + [1],
-                )
+                ),
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [1, 'selection_set', 'selections', 0],
+                    BASE_FIELD_PATH + [1],
+                ),
             ]
         )
         query_node = split_query(parse(query_str), basic_merged_schema)
@@ -742,8 +751,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        base_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                           'selections']
         query_piece1_str = dedent('''\
             {
               Animal {
@@ -779,32 +786,129 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        query_piece1 = split_query(parse(query_str), basic_merged_schema)
-        self.assertEqual(print_ast(query_piece1.query_ast), query_piece1_str)
-        self.assertEqual(len(query_piece1.child_query_connections), 1)
-        query_piece2 = query_piece1.child_query_connections[0].sink_query_node
-        print(query_piece2.query_ast)
-        self.assertEqual(query_piece1.child_query_connections[0].source_field_path,
-                         base_field_path+[1])
-        self.assertEqual(query_piece1.child_query_connections[0].sink_field_path,
-                         base_field_path+[1])
-        self._check_query_node_edge(query_piece1, 0, query_piece2)
-        self.assertEqual(print_ast(query_piece2.query_ast), query_piece2_str)
-        self.assertEqual(len(query_piece2.child_query_connections), 2)
-        query_piece3 = query_piece2.child_query_connections[0].sink_query_node
-        self.assertEqual(query_piece2.child_query_connections[0].source_field_path,
-                         base_field_path+[1])
-        self.assertEqual(query_piece2.child_query_connections[0].sink_field_path,
-                         base_field_path+[1])
-        query_piece4 = query_piece2.child_query_connections[1].sink_query_node
-        self.assertEqual(query_piece2.child_query_connections[1].source_field_path,
-                         base_field_path+[2, 'selection_set', 'selections', 0])
-        self.assertEqual(query_piece2.child_query_connections[1].sink_field_path,
-                         base_field_path+[1])
-        self._check_query_node_edge(query_piece2, 0, query_piece3)
-        self._check_query_node_edge(query_piece2, 1, query_piece4)
-        self.assertEqual(print_ast(query_piece3.query_ast), query_piece3_str)
-        self.assertEqual(print_ast(query_piece4.query_ast), query_piece4_str)
+        example_query_node = ExampleQueryNode(
+            query_str=query_piece1_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=query_piece2_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[
+                            (
+                                ExampleQueryNode(
+                                    query_str=query_piece3_str,
+                                    schema_id='first',
+                                    child_query_nodes_and_paths=[]
+                                ),
+                                BASE_FIELD_PATH + [1],
+                                BASE_FIELD_PATH + [1],
+                            ),
+                            (
+                                ExampleQueryNode(
+                                    query_str=query_piece4_str,
+                                    schema_id='first',
+                                    child_query_nodes_and_paths=[]
+                                ),
+                                BASE_FIELD_PATH + [2, 'selection_set', 'selections', 0],
+                                BASE_FIELD_PATH + [1],
+                            ),
+                        ]
+                    ),
+                    BASE_FIELD_PATH + [1],
+                    BASE_FIELD_PATH + [1],
+                ),
+            ]
+        )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+
+    def test_chain_of_edges_same_field(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  in_Animal_Creature {
+                      description @output(out_name: "friend_description")
+                  }
+                  friend {
+                    in_Animal_Creature {
+                        description @output(out_name: "friend_description")
+                    }
+                  }
+                }
+              }
+            }
+        ''')
+        query_piece1_str = dedent('''\
+            {
+              Animal {
+                uuid
+              }
+            }
+        ''')
+        query_piece2_str = dedent('''\
+            {
+              Creature {
+                id
+                friend {
+                  id
+                }
+              }
+            }
+        ''')
+        query_piece3_str = dedent('''\
+            {
+              Animal {
+                description @output(out_name: "friend_description")
+                uuid
+              }
+            }
+        ''')
+        query_piece4_str = dedent('''\
+            {
+              Animal {
+                description @output(out_name: "friend_description")
+                uuid
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=query_piece1_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=query_piece2_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[
+                            (
+                                ExampleQueryNode(
+                                    query_str=query_piece3_str,
+                                    schema_id='first',
+                                    child_query_nodes_and_paths=[]
+                                ),
+                                BASE_FIELD_PATH + [0],
+                                BASE_FIELD_PATH + [1],
+                            ),
+                            (
+                                ExampleQueryNode(
+                                    query_str=query_piece4_str,
+                                    schema_id='first',
+                                    child_query_nodes_and_paths=[]
+                                ),
+                                BASE_FIELD_PATH + [1, 'selection_set', 'selections', 0],
+                                BASE_FIELD_PATH + [1],
+                            ),
+                        ]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [0],
+                ),
+            ]
+        )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_cross_schema_edge_field_after_normal_vertex_field(self):
         query_str = dedent('''\
