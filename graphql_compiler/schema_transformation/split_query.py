@@ -144,6 +144,8 @@ class CheckQueryIsValidToSplit(Visitor):
         """Check property fields occur before vertex fields and type coercions in selection."""
         past_property_fields = False  # Whether we're seen a vertex field
         for field in node.selections:
+#            if field is None:
+#                continue
             if _is_property_field(field):
                 if past_property_fields:
                     raise GraphQLValidationError(
@@ -257,12 +259,6 @@ class SplitQueryVisitor(Visitor):
             path: List[Union[int, str]], listing the attribute names or list indices used to
                   index into the AST, starting from the root, to reach the current node
         """
-        print(node.name.value)
-        def p(child):
-            if child is None:
-                return None
-            return child.name.value
-        print([p(child) for child in parent])
         # Get root vertex field name and selection set of the current branch of the AST
         child_type_name, child_selection_set = \
             self._get_child_root_vertex_field_name_and_selection_set(node)
@@ -298,13 +294,7 @@ class SplitQueryVisitor(Visitor):
         _add_query_connections(self.root_query_node, child_query_node, parent_field_path,
                                child_field_path)
 
-        print([p(child) for child in parent])
-        if parent[key] is None:
-            # NOTE: this doesn't quite work -- None isn't deleted until all siblings have been
-            # visited, at which point the siblings have the wrong indices
-            return REMOVE  # Delete branch (delete the None without affecting visitor traversal)
-        else:
-            return False  # Skip visiting the branch
+        return False  # Skip visiting the branch
 
     def _check_or_set_schema_id(self, type_name):
         """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
@@ -422,8 +412,11 @@ class SplitQueryVisitor(Visitor):
             parent.pop(key)  # Delete current field
             parent_field_index = _insert_new_property_field(parent, parent_field)
         else:
-            # Remove stump field. Deleting the field directly affects the visitor's traversal,
-            # so replace this node by None here, and return REMOVE at the end of enter_Field
+            # Remove stump field.
+            # Deleting the field directly interferes with the visitor's traversal. Consolidating
+            # the selection sets after traversal by removing Nones also fails, because paths
+            # to property fields may refer to fields behind Nones in their lists, and removing
+            # Nones shifts their indices and render paths invalid
             parent[key] = None
 
         # Valid existing directives are passed down
@@ -526,6 +519,9 @@ def _insert_new_property_field(selections, new_field):
     """
     index_to_insert = None
     for index, selection in enumerate(selections):
+        if selection is None:  # Unfortunate holes left over by removing edge fields
+            # Fine to count as either property or non-property
+            continue
         if _is_property_field(selection):
             if index_to_insert is not None:
                 raise AssertionError(
