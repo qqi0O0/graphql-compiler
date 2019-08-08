@@ -3,7 +3,7 @@ from collections import namedtuple
 from copy import copy
 
 from graphql import build_ast_schema
-from graphql.language import ast as ast_types
+from graphql.language.ast import Name
 from graphql.language.visitor import Visitor, visit
 import six
 
@@ -215,7 +215,7 @@ class RenameSchemaTypesVisitor(Visitor):
         name_string = node.name.value
 
         if name_string == self.query_type or name_string in self.scalar_types:
-            return
+            return None
 
         new_name_string = self.renamings.get(name_string, name_string)  # Default use original
         check_type_name_is_valid(new_name_string)
@@ -306,10 +306,25 @@ def _get_copy_of_node_with_new_name(node, new_name):
     Args:
         node: type Node, with a .name attribute. Not modified by this function
         new_name: str, name to give to the output node
+
+    Returns:
+        Node, with new_name as its name and otherwise identical to the input node
     """
+    node_type = type(node).__name__
+    allowed_types = frozenset((
+        'EnumTypeDefinition',
+        'FieldDefinition',
+        'InterfaceTypeDefinition',
+        'NamedType',
+        'ObjectTypeDefinition',
+        'UnionTypeDefinition',
+    ))
+    if node_type not in allowed_types:
+        raise AssertionError(
+            u'Input node {} of type {} is not allowed.'.format(
+                node, type(node).__name__, allowed_types
+            )
+        )
     node_with_new_name = copy(node)  # shallow copy is enough
-    try:
-        node_with_new_name.name = ast_types.Name(value=new_name)
-    except AttributeError:
-        raise AssertionError(u'Input node {} should have an `name` attribute.'.format(node))
+    node_with_new_name.name = Name(value=new_name)
     return node_with_new_name
