@@ -87,9 +87,6 @@ def split_query(query_ast, merged_schema_descriptor):
             current_node_to_visit
         )
         visitor = TypeInfoVisitor(type_info, split_query_visitor)
-        # TODO: this is super confusing, `visit` both modifies in place and modifies output,
-        # and only the output contains all the modifications we want
-        # It also still fails?
         current_node_to_visit.query_ast = visit(current_node_to_visit.query_ast, visitor)
         query_nodes_to_visit.extend(
             child_query_connection.sink_query_node
@@ -160,7 +157,7 @@ class CheckQueryIsValidToSplit(Visitor):
 
  
 def _is_property_field(selection):
-    """Return True if field is a property field, False if a vertex field or a type coercion."""
+    """Return True if selection is a property field, False if a vertex field or type coercion."""
     if isinstance(selection, ast_types.InlineFragment):
         return False
     if isinstance(selection, ast_types.Field):
