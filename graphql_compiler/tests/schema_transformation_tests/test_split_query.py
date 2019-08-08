@@ -1,4 +1,5 @@
 # Copyright 2019-present Kensho Technologies, LLC.
+from collections import namedtuple
 from textwrap import dedent
 import unittest
 
@@ -10,13 +11,13 @@ from .example_schema import basic_merged_schema, interface_merged_schema, union_
 
 
 # The below namedtuple is used to check the structure of SubQueryNodes in tests
-TestQueryNode = namedtuple(
-    'TestQueryNode', (
+ExampleQueryNode = namedtuple(
+    'ExampleQueryNode', (
         'query_str',
         'schema_id',
         'child_query_nodes_and_paths',
-        # List[Tuple[TestQueryNode, List[Union[int, str]], List[Union[int, str]]]]
-        # child test query node, parent field path, child field path
+        # List[Tuple[ExampleQueryNode, List[Union[int, str]], List[Union[int, str]]]]
+        # child example query node, parent field path, child field path
     )
 )
 
@@ -29,27 +30,27 @@ BASE_FIELD_PATH = [
 
 
 class TestSplitQuery(unittest.TestCase):
-    def _check_query_node_structure(self, root_query_node, root_test_query_node):
+    def _check_query_node_structure(self, root_query_node, root_example_query_node):
         self.assertIs(root_query_node.parent_query_connection, None)
-        self._check_query_node_structure_helper(query_node, test_query_node)
+        self._check_query_node_structure_helper(root_query_node, root_example_query_node)
 
-    def _check_query_node_structure_helper(self, query_node, test_query_node):
+    def _check_query_node_structure_helper(self, query_node, example_query_node):
         # Check AST and id of the parent
-        self.assertEqual(print_ast(query_node.query_ast), test_query_node.query_str)
-        self.assertEqual(query_node.schema_id, test_query_node.schema_id)
+        self.assertEqual(print_ast(query_node.query_ast), example_query_node.query_str)
+        self.assertEqual(query_node.schema_id, example_query_node.schema_id)
         # Check number of children matches
         self.assertEqual(len(query_node.child_query_connections),
-                         len(test_query_node.child_query_nodes_and_paths))
+                         len(example_query_node.child_query_nodes_and_paths))
         for i in range(len(query_node.child_query_connections)):
             # Check child and parent connections
             child_query_connection = query_node.child_query_connections[i]
             child_query_node = child_query_connection.sink_query_node
-            child_test_query_node, parent_field_path, child_field_path = \
-                test_query_node.child_query_nodes_and_paths[i]
+            child_example_query_node, parent_field_path, child_field_path = \
+                example_query_node.child_query_nodes_and_paths[i]
             self._check_query_node_edge(query_node, i, child_query_node, parent_field_path,
                                         child_field_path)
             # Recurse
-            self._check_query_node_structure_helper(child_query_node, child_test_query_node)
+            self._check_query_node_structure_helper(child_query_node, child_example_query_node)
 
     def _check_query_node_edge(self, parent_query_node, parent_to_child_edge_index,
                                child_query_node, parent_field_path, child_field_path):
@@ -88,8 +89,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -98,13 +97,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_existing_output_field_in_parent(self):
         query_str = dedent('''\
@@ -124,8 +133,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -134,13 +141,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_check_none_branch_removed(self):
         query_str = dedent('''\
@@ -178,8 +195,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -188,13 +203,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 0]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [0],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_existing_field_in_both(self):
         query_str = dedent('''\
@@ -215,8 +240,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -225,13 +248,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 0]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [0],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_nested_query(self):
         query_str = dedent('''\
@@ -259,8 +292,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0, 'selection_set', 'selections', 1]
         child_str = dedent('''\
             {
               Creature {
@@ -272,13 +303,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0, 'selection_set', 'selections', 1],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_existing_optional_on_edge(self):
         query_str = dedent('''\
@@ -297,8 +338,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -307,13 +346,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_existing_optional_on_edge_and_field(self):
         query_str = dedent('''\
@@ -333,8 +382,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -343,13 +390,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_existing_directives_on_edge_moved_to_field(self):
         query_str = dedent('''\
@@ -369,8 +426,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -379,13 +434,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_unsupported_directives(self):
         query_str = dedent('''\
@@ -460,8 +525,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 1, 'selection_set', 'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -470,13 +533,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [1, 'selection_set', 'selections', 0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_interface_type_coercion_after_edge(self):
         query_str = dedent('''\
@@ -497,8 +570,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Cat {
@@ -507,13 +578,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            interface_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), interface_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_invalid_interface_type_coercion(self):
         query_str = dedent('''\
@@ -550,8 +631,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Cat {
@@ -560,13 +639,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            interface_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), union_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_invalid_union_type_coercion(self):
         query_str = dedent('''\
@@ -598,12 +687,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        query_piece1 = split_query(parse(query_str), basic_merged_schema)
-        self.assertEqual(len(query_piece1.child_query_connections), 2)
-        query_piece2 = query_piece1.child_query_connections[0].sink_query_node
-        query_piece3 = query_piece1.child_query_connections[1].sink_query_node
-        print(query_piece1.child_query_connections[0].source_field_path)
-        print(query_piece1.child_query_connections[1].source_field_path)
         parent_str = dedent('''\
             {
               Animal {
@@ -614,8 +697,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -624,13 +705,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(  # TODO
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     def test_complex_query_structure(self):
         query_str = dedent('''\
@@ -738,8 +829,6 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -748,13 +837,23 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 1]
-
-        self._check_simple_parent_child_structure(
-            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
-            child_str, child_field_path, 'second'
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
         )
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
 
     # TODO: multiple stitching on same property field (two edges to two schemas using same field)
     # TODO: chain: a to b and b to c, using same field on b
