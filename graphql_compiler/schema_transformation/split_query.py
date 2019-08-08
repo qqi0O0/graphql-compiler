@@ -285,8 +285,8 @@ class SplitQueryVisitor(Visitor):
         child_query_ast = _create_query_document(child_type_name, child_selection_set)
         child_query_node = SubQueryNode(child_query_ast)
         # Create and add QueryConnections to parent and child
-        self._add_query_connections(self.root_query_node, child_query_node, parent_field_path,
-                                    child_field_path)
+        _add_query_connections(self.root_query_node, child_query_node, parent_field_path,
+                               child_field_path)
 
         if parent[key] is None:
             return REMOVE  # Delete branch (delete the None without affecting visitor traversal)
@@ -297,8 +297,8 @@ class SplitQueryVisitor(Visitor):
         """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
 
         Args:
-            type_name: str, name of the type those schema id we're comparing against the
-                       current schema id, if any
+            type_name: str, name of the type whose schema id we're comparing against the
+                       previously recorded schema id
         """
         if type_name in self.type_name_to_schema_id:  # It may be a scalar, and thus not found
             current_type_schema_id = self.type_name_to_schema_id[type_name]
@@ -306,8 +306,9 @@ class SplitQueryVisitor(Visitor):
             if prior_type_schema_id is None:  # First time checking schema_id
                 self.root_query_node.schema_id = current_type_schema_id
             elif current_type_schema_id != prior_type_schema_id:
-                # merged_schema_descriptor invalid, an edge field without a @stitch directive
-                # crosses schemas, or type_name_to_schema_id is wrong
+                # A single query piece has types from two schemas -- merged_schema_descriptor
+                # is invalid: an edge field without a @stitch directive crosses schemas,
+                # or type_name_to_schema_id is wrong
                 raise SchemaStructureError(
                     u'The provided merged schema descriptor may be invalid. Perhaps '
                     u'some edge that does not have a @stitch directive crosses schemas. As '
@@ -406,7 +407,7 @@ class SplitQueryVisitor(Visitor):
                 name=ast_types.Name(value=parent_field_name)
             )
             parent.pop(key)  # Delete current field
-            parent_field_index = self._insert_new_property_field(parent, parent_field)
+            parent_field_index = _insert_new_property_field(parent, parent_field)
         else:
             # Remove stump field. Deleting the field directly affects the visitor's traversal,
             # so replace this node by None here, and return REMOVE at the end of enter_Field
@@ -445,7 +446,7 @@ class SplitQueryVisitor(Visitor):
             child_field = ast_types.Field(
                 name=ast_types.Name(value=child_field_name)
             )
-            child_field_index = self._insert_new_property_field(child_selections, child_field)
+            child_field_index = _insert_new_property_field(child_selections, child_field)
 
         child_field_path = [
             'definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
@@ -453,46 +454,18 @@ class SplitQueryVisitor(Visitor):
         ]
         return child_field_path
 
-    def _insert_new_property_field(self, selections, new_field):
-        """Insert new_field into selections between property fields and vertex fields.
-
-        In selections, all property fields, if any, must occur before all vertex fields, if any.
-
-        Args:
-            selections: List[Field], where all property fields occur before all vertex fields.
-                        Modified by this function
-            new_field: Field object, to be inserted into selections
-
-        Returns:
-            int, the index where the new field was inserted
-        """
-        index_to_insert = None
-        for index, selection in enumerate(selections):
-            if _is_property_field(selection):
-                if index_to_insert is not None:
-                    raise AssertionError(
-                        u'Property field {} comes after some vertex field in selection {}, and '
-                        u'this was unexpectedly not caught in the valiation step.'.format(
-                            selection, selections
-                        )
-                    )
-            else:
-                if index_to_insert is None:
-                    index_to_insert = index
-        if index_to_insert is None:  # No vertex fields
-            index_to_insert = len(selections)
-        selections.insert(index_to_insert, new_field)
-        return index_to_insert
-
     def _add_directives_from_edge(self, field, new_directives):
-        """Add new directives to field as necessary, raising error for illegal duplicates.
+        """Add new directives to field as necessary.
+
+        new_directives comes from a cross schema edge. Thus, @output directives are disallowed,
+        and @stitch directives are ignored, when adding directives onto the new field.
 
         Args:
             field: Field object, a property field, whose directives attribute will be modified
             new_directives: List[Directive] or None, directives previously existing on an
-                            edge field
+                            cross schema edge field
         """
-        if new_directives is None:
+        if new_directives is None:  # Nothing to add
             return
         if field.directives is None:
             field.directives = []
@@ -513,26 +486,8 @@ class SplitQueryVisitor(Visitor):
             else:
                 raise AssertionError(
                     u'Unreachable code reached. Directive "{}" is of an unsupported type, and '
-                    u'was not caught by a prior validation step.'.format(new_directive)
+                    u'was not caught in a prior validation step.'.format(new_directive)
                 )
-
-    def _add_query_connections(self, parent_query_node, child_query_node, parent_field_path,
-                               child_field_path):
-        """Modify parent and child SubQueryNodes by adding appropriate QueryConnections."""
-        # Create QueryConnections
-        new_query_connection_from_parent = QueryConnection(
-            sink_query_node=child_query_node,
-            source_field_path=parent_field_path,
-            sink_field_path=child_field_path,
-        )
-        new_query_connection_from_child = QueryConnection(
-            sink_query_node=self.root_query_node,
-            source_field_path=child_field_path,
-            sink_field_path=parent_field_path,
-        )
-        # Add QueryConnections
-        parent_query_node.child_query_connections.append(new_query_connection_from_parent)
-        child_query_node.parent_query_connection = new_query_connection_from_child
 
     def leave_Document(self, node, *args):
         # Confirm that schema_id has been filled in
@@ -541,6 +496,57 @@ class SplitQueryVisitor(Visitor):
                 u'Unreachable code reached. The schema id of query piece "{}" has not been '
                 u'determined.'.format(print_ast(self.root_query_node.query_ast))
             )
+
+
+def _insert_new_property_field(selections, new_field):
+    """Insert new_field into selections, between existing property fields and vertex fields.
+
+    In selections, all property fields, if any, must occur before all vertex fields, if any.
+
+    Args:
+        selections: List[Field], where all property fields occur before all vertex fields.
+                    Modified by this function
+        new_field: Field object, to be inserted into selections
+
+    Returns:
+        int, the index where the new field was inserted
+    """
+    index_to_insert = None
+    for index, selection in enumerate(selections):
+        if _is_property_field(selection):
+            if index_to_insert is not None:
+                raise AssertionError(
+                    u'Property field {} comes after some vertex field in selection {}, and '
+                    u'this was not caught in a prior valiation step.'.format(
+                        selection, selections
+                    )
+                )
+        else:
+            if index_to_insert is None:
+                index_to_insert = index
+    if index_to_insert is None:  # No vertex fields
+        index_to_insert = len(selections)
+    selections.insert(index_to_insert, new_field)
+    return index_to_insert
+
+
+def _add_query_connections(parent_query_node, child_query_node, parent_field_path,
+                           child_field_path):
+    """Modify parent and child SubQueryNodes by adding QueryConnections between them."""
+    # Create QueryConnections
+    new_query_connection_from_parent = QueryConnection(
+        sink_query_node=child_query_node,
+        source_field_path=parent_field_path,
+        sink_field_path=child_field_path,
+    )
+    new_query_connection_from_child = QueryConnection(
+        sink_query_node=parent_query_node,
+        source_field_path=child_field_path,
+        sink_field_path=parent_field_path,
+    )
+    # Add QueryConnections
+    parent_query_node.child_query_connections.append(new_query_connection_from_parent)
+    child_query_node.parent_query_connection = new_query_connection_from_child
 
 
 def _create_query_document(root_vertex_field_name, root_selection_set):
