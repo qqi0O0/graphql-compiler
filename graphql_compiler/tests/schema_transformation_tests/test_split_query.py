@@ -10,8 +10,10 @@ from .example_schema import basic_merged_schema, interface_merged_schema, union_
 
 
 class TestSplitQuery(unittest.TestCase):
-    # TODO: Test original unmodified
     # TODO: make these queries all legal with @output and such
+    # test for bad property and vertex field order
+    # test for edge cut off, new property field added NOT in place
+    # type coercion in different places
     def _get_unique_element(self, elements_list):
         self.assertIsInstance(elements_list, list)
         self.assertEqual(len(elements_list), 1)
@@ -36,7 +38,10 @@ class TestSplitQuery(unittest.TestCase):
         parent_schema_id, child_str, child_field_path, child_schema_id
     ):
         """Check the query splits into a parent with one child, with specified attributes."""
-        parent_query_node = split_query(parse(full_query_str), merged_schema)
+        full_query_ast = parse(full_query_str)
+        parent_query_node = split_query(full_query_ast, merged_schema)
+        self.assertEqual(full_query_ast, parse(full_query_str))  # Check original unmodified
+
         parent_to_child_connection = self._get_unique_element(
             parent_query_node.child_query_connections
         )
