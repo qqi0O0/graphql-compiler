@@ -87,7 +87,10 @@ def split_query(query_ast, merged_schema_descriptor):
             current_node_to_visit
         )
         visitor = TypeInfoVisitor(type_info, split_query_visitor)
-        visit(current_node_to_visit.query_ast, visitor)
+        # TODO: this is super confusing, `visit` both modifies in place and modifies output,
+        # and only the output contains all the modifications we want
+        # It also still fails?
+        current_node_to_visit.query_ast = visit(current_node_to_visit.query_ast, visitor)
         query_nodes_to_visit.extend(
             child_query_connection.sink_query_node
             for child_query_connection in current_node_to_visit.child_query_connections
@@ -232,6 +235,7 @@ class SplitQueryVisitor(Visitor):
         self.type_name_to_schema_id = type_name_to_schema_id
         self.root_query_node = root_query_node
 
+    # TODO: enter_SelectionSet instead? Much more freedom and control over the selections list
     def enter_Field(self, node, key, parent, path, *args):
         """Check for split at the current field, creating a new SubQueryNode if needed.
 
