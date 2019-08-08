@@ -9,20 +9,51 @@ from ...schema_transformation.split_query import split_query
 from .example_schema import basic_merged_schema, interface_merged_schema, union_merged_schema
 
 
+# The below namedtuple is used to check the structure of SubQueryNodes in tests
+TestQueryNode = namedtuple(
+    'TestQueryNode', (
+        'query_str',
+        'schema_id',
+        'child_query_nodes_and_paths',
+        # List[Tuple[TestQueryNode, List[Union[int, str]], List[Union[int, str]]]]
+        # child test query node, parent field path, child field path
+    )
+)
+
+
+# The path that all field paths share in common. This path reaches the list of root selections
+# of the query
+BASE_FIELD_PATH = [
+    'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections'
+]
+
+
 class TestSplitQuery(unittest.TestCase):
-    # TODO: make these queries all legal with @output and such
-    # test for bad property and vertex field order
-    # test for edge cut off, new property field added NOT in place
-    # type coercion in different places
-    # Test like where the Cat type didn't have a corresponding root field
-    def _get_unique_element(self, elements_list):
-        self.assertIsInstance(elements_list, list)
-        self.assertEqual(len(elements_list), 1)
-        return elements_list[0]
+    def _check_query_node_structure(self, root_query_node, root_test_query_node):
+        self.assertIs(root_query_node.parent_query_connection, None)
+        self._check_query_node_structure_helper(query_node, test_query_node)
+
+    def _check_query_node_structure_helper(self, query_node, test_query_node):
+        # Check AST and id of the parent
+        self.assertEqual(print_ast(query_node.query_ast), test_query_node.query_str)
+        self.assertEqual(query_node.schema_id, test_query_node.schema_id)
+        # Check number of children matches
+        self.assertEqual(len(query_node.child_query_connections),
+                         len(test_query_node.child_query_nodes_and_paths))
+        for i in range(len(query_node.child_query_connections)):
+            # Check child and parent connections
+            child_query_connection = query_node.child_query_connections[i]
+            child_query_node = child_query_connection.sink_query_node
+            child_test_query_node, parent_field_path, child_field_path = \
+                test_query_node.child_query_nodes_and_paths[i]
+            self._check_query_node_edge(query_node, i, child_query_node, parent_field_path,
+                                        child_field_path)
+            # Recurse
+            self._check_query_node_structure_helper(child_query_node, child_test_query_node)
 
     def _check_query_node_edge(self, parent_query_node, parent_to_child_edge_index,
-                               child_query_node):
-        """Check the edge between parent and child is symmetric."""
+                               child_query_node, parent_field_path, child_field_path):
+        """Check the edge between parent and child is symmetric, with the right paths."""
         parent_to_child_connection = \
             parent_query_node.child_query_connections[parent_to_child_edge_index]
         child_to_parent_connection = child_query_node.parent_query_connection
@@ -34,30 +65,11 @@ class TestSplitQuery(unittest.TestCase):
         self.assertEqual(parent_to_child_connection.sink_field_path,
                          child_to_parent_connection.source_field_path)
 
-    def _check_simple_parent_child_structure(
-        self, merged_schema, full_query_str, parent_str, parent_field_path,
-        parent_schema_id, child_str, child_field_path, child_schema_id
-    ):
-        """Check the query splits into a parent with one child, with specified attributes."""
-        full_query_ast = parse(full_query_str)
-        parent_query_node = split_query(full_query_ast, merged_schema)
-        self.assertEqual(full_query_ast, parse(full_query_str))  # Check original unmodified
-
-        parent_to_child_connection = self._get_unique_element(
-            parent_query_node.child_query_connections
-        )
-        child_query_node = parent_to_child_connection.sink_query_node
-
-        self._check_query_node_edge(parent_query_node, 0, child_query_node)
-
-        self.assertEqual(print_ast(parent_query_node.query_ast), parent_str)
-        self.assertEqual(print_ast(child_query_node.query_ast), child_str)
-
-        self.assertEqual(child_query_node.child_query_connections, [])
-        self.assertIs(parent_query_node.parent_query_connection, None)
-
-        self.assertEqual(parent_to_child_connection.source_field_path, parent_field_path)
-        self.assertEqual(parent_to_child_connection.sink_field_path, child_field_path)
+    # TODO: make these queries all legal with @output and such
+    # test for bad property and vertex field order
+    # test for edge cut off, new property field added NOT in place
+    # type coercion in different places
+    # Test like where the Cat type didn't have a corresponding root field
 
     def test_no_existing_fields_split(self):
         query_str = dedent('''\
@@ -129,6 +141,24 @@ class TestSplitQuery(unittest.TestCase):
             basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
             child_str, child_field_path, 'second'
         )
+
+    def test_check_none_branch_removed(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                uuid @output(out_name: "result")
+                out_Animal_Creature {
+                  age
+                }
+              }
+            }
+        ''')
+        query_node = split_query(parse(query_str), basic_merged_schema)
+        parent_ast = query_node.query_ast
+        parent_root_selections = parent_ast.definitions[0].selection_set.selections[0].\
+                selection_set.selections
+        self.assertEqual(len(parent_root_selections), 1)  # check None in second position removed
+        print(query_node.query_ast)
 
     def test_existing_output_field_in_child(self):
         query_str = dedent('''\
@@ -231,20 +261,19 @@ class TestSplitQuery(unittest.TestCase):
         ''')
         parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
                              'selections', 0, 'selection_set', 'selections', 1]
-        # TODO: below is illegal
         child_str = dedent('''\
             {
               Creature {
                 age @output(out_name: "age1")
+                id
                 friend {
                   age @output(out_name: "age2")
                 }
-                id
               }
             }
         ''')
         child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                            'selections', 2]
+                            'selections', 1]
 
         self._check_simple_parent_child_structure(
             basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
@@ -290,10 +319,10 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Animal {
+                uuid @optional
                 out_Animal_Creature @optional {
                   age @output(out_name: "age")
                 }
-                uuid @optional
               }
             }
         ''')
@@ -305,8 +334,7 @@ class TestSplitQuery(unittest.TestCase):
             }
         ''')
         parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 1]
-        # NOTE: the last index is 1, because there is a None occupying index 0
+                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
@@ -555,6 +583,55 @@ class TestSplitQuery(unittest.TestCase):
         with self.assertRaises(GraphQLValidationError):
             split_query(parse(query_str), union_merged_schema)
 
+    def test_two_children_stitch_on_same_field(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  age
+                }
+                out_Animal_ParentOf {
+                  out_Animal_Creature {
+                    age
+                  }
+                }
+              }
+            }
+        ''')
+        query_piece1 = split_query(parse(query_str), basic_merged_schema)
+        self.assertEqual(len(query_piece1.child_query_connections), 2)
+        query_piece2 = query_piece1.child_query_connections[0].sink_query_node
+        query_piece3 = query_piece1.child_query_connections[1].sink_query_node
+        print(query_piece1.child_query_connections[0].source_field_path)
+        print(query_piece1.child_query_connections[1].source_field_path)
+        parent_str = dedent('''\
+            {
+              Animal {
+                uuid
+                out_Animal_ParentOf {
+                  uuid
+                }
+              }
+            }
+        ''')
+        parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                             'selections', 0]
+        child_str = dedent('''\
+            {
+              Creature {
+                age
+                id
+              }
+            }
+        ''')
+        child_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
+                            'selections', 1]
+
+        self._check_simple_parent_child_structure(
+            basic_merged_schema, query_str, parent_str, parent_field_path, 'first',
+            child_str, child_field_path, 'second'
+        )
+
     def test_complex_query_structure(self):
         query_str = dedent('''\
             {
@@ -584,15 +661,14 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        # TODO: below is also illegal
         query_piece2_str = dedent('''\
             {
               Creature {
                 age @output(out_name: "age")
+                id
                 friend {
                   id
                 }
-                id
               }
             }
         ''')
@@ -616,16 +692,17 @@ class TestSplitQuery(unittest.TestCase):
         self.assertEqual(print_ast(query_piece1.query_ast), query_piece1_str)
         self.assertEqual(len(query_piece1.child_query_connections), 1)
         query_piece2 = query_piece1.child_query_connections[0].sink_query_node
+        print(query_piece2.query_ast)
         self.assertEqual(query_piece1.child_query_connections[0].source_field_path,
                          base_field_path+[1])
         self.assertEqual(query_piece1.child_query_connections[0].sink_field_path,
-                         base_field_path+[3])  # 3 instead of 2, due to None in position 1
+                         base_field_path+[1])
         self._check_query_node_edge(query_piece1, 0, query_piece2)
         self.assertEqual(print_ast(query_piece2.query_ast), query_piece2_str)
         self.assertEqual(len(query_piece2.child_query_connections), 2)
         query_piece3 = query_piece2.child_query_connections[0].sink_query_node
         self.assertEqual(query_piece2.child_query_connections[0].source_field_path,
-                         base_field_path+[3])
+                         base_field_path+[1])
         self.assertEqual(query_piece2.child_query_connections[0].sink_field_path,
                          base_field_path+[1])
         query_piece4 = query_piece2.child_query_connections[1].sink_query_node
@@ -651,19 +728,18 @@ class TestSplitQuery(unittest.TestCase):
               }
             }
         ''')
-        # TODO: The string below is illegal! Property field comes after vertex field
         parent_str = dedent('''\
             {
               Animal {
+                uuid
                 out_Animal_ParentOf {
                   color @output(out_name: "color")
                 }
-                uuid
               }
             }
         ''')
         parent_field_path = ['definitions', 0, 'selection_set', 'selections', 0, 'selection_set',
-                             'selections', 1]
+                             'selections', 0]
         child_str = dedent('''\
             {
               Creature {
