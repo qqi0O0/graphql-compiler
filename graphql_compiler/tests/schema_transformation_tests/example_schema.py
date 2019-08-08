@@ -190,3 +190,58 @@ union_merged_schema = merge_schemas(
     ],
     get_type_equivalence_hints(union_schema_id_to_ast, {'Creature': 'CreatureOrCat'})
 )
+
+
+third_additional_schema = '''
+schema {
+  query: SchemaQuery
+}
+
+type Critter {
+  size: Int
+  ID: String
+}
+
+type SchemaQuery {
+  Critter: Critter
+}
+'''
+
+
+three_merged_schema = merge_schemas(
+    OrderedDict([
+        ('first', basic_schema),
+        ('second', parse(basic_additional_schema)),
+        ('third', parse(third_additional_schema)),
+    ]),
+    [
+        CrossSchemaEdgeDescriptor(
+            edge_name='Animal_Creature',
+            outbound_field_reference=FieldReference(
+                schema_id='first',
+                type_name='Animal',
+                field_name='uuid',
+            ),
+            inbound_field_reference=FieldReference(
+                schema_id='second',
+                type_name='Creature',
+                field_name='id'
+            ),
+            out_edge_only=False,
+        ),
+        CrossSchemaEdgeDescriptor(
+            edge_name='Animal_Critter',
+            outbound_field_reference=FieldReference(
+                schema_id='first',
+                type_name='Animal',
+                field_name='uuid',
+            ),
+            inbound_field_reference=FieldReference(
+                schema_id='third',
+                type_name='Critter',
+                field_name='ID'
+            ),
+            out_edge_only=False,
+        ),
+    ],
+)

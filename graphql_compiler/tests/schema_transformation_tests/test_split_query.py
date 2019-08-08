@@ -7,7 +7,9 @@ from graphql import parse, print_ast
 
 from ...exceptions import GraphQLValidationError
 from ...schema_transformation.split_query import split_query
-from .example_schema import basic_merged_schema, interface_merged_schema, union_merged_schema
+from .example_schema import (
+    basic_merged_schema, interface_merged_schema, union_merged_schema, three_merged_schema
+)
 
 
 # The below namedtuple is used to check the structure of SubQueryNodes in tests
@@ -823,87 +825,61 @@ class TestSplitQuery(unittest.TestCase):
         query_node = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
 
-    def test_chain_of_edges_same_field(self):
+    def test_path_after_removed_field(self):
         query_str = dedent('''\
             {
               Animal {
+                uuid
                 out_Animal_Creature {
-                  in_Animal_Creature {
-                      description @output(out_name: "friend_description")
-                  }
-                  friend {
-                    in_Animal_Creature {
-                        description @output(out_name: "friend_description")
-                    }
+                  age
+                }
+                out_Animal_ParentOf {
+                  out_Animal_Creature {
+                    age
                   }
                 }
               }
             }
         ''')
-        query_piece1_str = dedent('''\
+        parent_str = dedent('''\
             {
               Animal {
                 uuid
+                out_Animal_ParentOf {
+                  uuid
+                }
               }
             }
         ''')
-        query_piece2_str = dedent('''\
+        child_str = dedent('''\
             {
               Creature {
+                age
                 id
-                friend {
-                  id
-                }
-              }
-            }
-        ''')
-        query_piece3_str = dedent('''\
-            {
-              Animal {
-                description @output(out_name: "friend_description")
-                uuid
-              }
-            }
-        ''')
-        query_piece4_str = dedent('''\
-            {
-              Animal {
-                description @output(out_name: "friend_description")
-                uuid
               }
             }
         ''')
         example_query_node = ExampleQueryNode(
-            query_str=query_piece1_str,
+            query_str=parent_str,
             schema_id='first',
             child_query_nodes_and_paths=[
                 (
                     ExampleQueryNode(
-                        query_str=query_piece2_str,
+                        query_str=child_str,
                         schema_id='second',
-                        child_query_nodes_and_paths=[
-                            (
-                                ExampleQueryNode(
-                                    query_str=query_piece3_str,
-                                    schema_id='first',
-                                    child_query_nodes_and_paths=[]
-                                ),
-                                BASE_FIELD_PATH + [0],
-                                BASE_FIELD_PATH + [1],
-                            ),
-                            (
-                                ExampleQueryNode(
-                                    query_str=query_piece4_str,
-                                    schema_id='first',
-                                    child_query_nodes_and_paths=[]
-                                ),
-                                BASE_FIELD_PATH + [1, 'selection_set', 'selections', 0],
-                                BASE_FIELD_PATH + [1],
-                            ),
-                        ]
+                        child_query_nodes_and_paths=[]
                     ),
                     BASE_FIELD_PATH + [0],
-                    BASE_FIELD_PATH + [0],
+                    BASE_FIELD_PATH + [1],
+                ),
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [1, 'selection_set', 'selections', 0],
+                    BASE_FIELD_PATH + [1],
                 ),
             ]
         )
@@ -959,6 +935,136 @@ class TestSplitQuery(unittest.TestCase):
         query_node = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
 
-    # TODO: multiple stitching on same property field (two edges to two schemas using same field)
-    # TODO: chain: a to b and b to c, using same field on b
+    def test_two_edges_on_same_field_in_V(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                name
+                out_Animal_Creature {
+                  age
+                }
+                out_Animal_Critter {
+                  size
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Animal {
+                name
+                uuid
+              }
+            }
+        ''')
+        child1_str = dedent('''\
+            {
+              Creature {
+                age
+                id
+              }
+            }
+        ''')
+        child2_str = dedent('''\
+            {
+              Critter {
+                size
+                ID
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child1_str,
+                        schema_id='second',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [1],
+                    BASE_FIELD_PATH + [1],
+                ),
+                (
+                    ExampleQueryNode(
+                        query_str=child2_str,
+                        schema_id='third',
+                        child_query_nodes_and_paths=[]
+                    ),
+                    BASE_FIELD_PATH + [1],
+                    BASE_FIELD_PATH + [1],
+                )
+            ]
+        )
+        query_node = split_query(parse(query_str), three_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+
+    def test_two_edges_on_same_field_in_chain(self):
+        query_str = dedent('''\
+            {
+              Creature {
+                age
+                in_Animal_Creature {
+                  name
+                  out_Animal_Critter {
+                    size
+                  }
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Creature {
+                age
+                id
+              }
+            }
+        ''')
+        child1_str = dedent('''\
+            {
+              Animal {
+                name
+                uuid
+              }
+            }
+        ''')
+
+        child2_str = dedent('''\
+            {
+              Critter {
+                size
+                ID
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='second',
+            child_query_nodes_and_paths=[
+                (
+                    ExampleQueryNode(
+                        query_str=child1_str,
+                        schema_id='first',
+                        child_query_nodes_and_paths=[
+                            (
+                                ExampleQueryNode(
+                                    query_str=child2_str,
+                                    schema_id='third',
+                                    child_query_nodes_and_paths=[]
+                                ),
+                                BASE_FIELD_PATH + [1],
+                                BASE_FIELD_PATH + [1],
+                            )
+                        ]
+                    ),
+                    BASE_FIELD_PATH + [1],
+                    BASE_FIELD_PATH + [1],
+                ),
+            ]
+        )
+        query_node = split_query(parse(query_str), three_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+
     # TODO: back and forth on an edge
