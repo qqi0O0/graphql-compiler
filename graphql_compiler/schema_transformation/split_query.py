@@ -236,10 +236,7 @@ class SplitQueryVisitor(Visitor):
         self.root_query_node = root_query_node
 
     # TODO: enter_SelectionSet instead? Much more freedom and control over the selections list
-    def enter_Selection_set(self, node, key, parent, path, *args):
-        pass
-
-    def process_field(self, node, key, parent, path_to_parent):
+    def enter_Field(self, node, key, parent, path, *args):
         """Check for split at the current field, creating a new SubQueryNode if needed.
 
         If there is a new split at this field as clued by a @stitch directive, a new AST
@@ -257,9 +254,8 @@ class SplitQueryVisitor(Visitor):
             key: int, index of the current node in the parent list
             parent: List[Union[Field, InlineFragment]], containing all other fields or type
                     coercions in this selection
-            path_to_parent: List[Union[int, str]], listing the attribute names or list indices
-                            used to index into the AST, starting from the root, to reach the
-                            parent of the current node
+            path: List[Union[int, str]], listing the attribute names or list indices used to
+                  index into the AST, starting from the root, to reach the current node
         """
         print(node.name.value)
         def p(child):
@@ -289,7 +285,7 @@ class SplitQueryVisitor(Visitor):
         parent_field_name, child_field_name = self.edge_to_stitch_fields[type_name_field_name]
         # Get path to the property fields used in stitching, creating new fields if needed
         parent_field_path = self._process_parent_field_get_field_path(
-            node, key, parent, path_to_parent, parent_field_name
+            node, key, parent, path, parent_field_name
         )
         child_field_path = self._process_child_field_get_field_path(
             child_selection_set.selections, child_field_name
@@ -377,8 +373,7 @@ class SplitQueryVisitor(Visitor):
 
         return child_type_name, child_selection_set
 
-    def _process_parent_field_get_field_path(self, node, key, parent, path_to_parent,
-                                             parent_field_name):
+    def _process_parent_field_get_field_path(self, node, key, parent, path, parent_field_name):
         """Modify fields, return path to parent property field used to stitch.
 
         If a property field with the specified name already exists, return a path to this field,
@@ -394,9 +389,8 @@ class SplitQueryVisitor(Visitor):
                     containing the current node. We search for a property field with the
                     input field name in this list, and modify this list as we insert new fields,
                     and replace or remove existing fields.
-            path_to_parent: List[Union[int, str]], listing the attribute names or list indices
-                            used to index into the AST, starting from the root, to reach the
-                            parent of the current node
+            path: List[Union[int, str]], listing the attribute names or list indices used to
+                  index into the AST, starting from the root, to reach the current node
             parent_field_name: str, the name of the property field we're searching for in
                                parent
 
@@ -435,7 +429,8 @@ class SplitQueryVisitor(Visitor):
         # Valid existing directives are passed down
         self._add_directives_from_edge(parent_field, node.directives)
         # Get field path
-        parent_field_path = path_to_parent + [parent_field_index]
+        parent_field_path = copy(path)
+        parent_field_path[-1] = parent_field_index  # Change last (current) index
         return parent_field_path
 
     def _process_child_field_get_field_path(self, child_selections, child_field_name):
