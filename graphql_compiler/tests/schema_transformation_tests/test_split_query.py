@@ -14,6 +14,7 @@ class TestSplitQuery(unittest.TestCase):
     # test for bad property and vertex field order
     # test for edge cut off, new property field added NOT in place
     # type coercion in different places
+    # Test like where the Cat type didn't have a corresponding root field
     def _get_unique_element(self, elements_list):
         self.assertIsInstance(elements_list, list)
         self.assertEqual(len(elements_list), 1)

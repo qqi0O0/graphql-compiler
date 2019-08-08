@@ -242,6 +242,9 @@ class SplitQueryVisitor(Visitor):
         be added to the list of children of root_query_node. The rest of the branch will
         not be visited.
 
+        A newly added property field will be placed between existing property fields and
+        existing vertex fields.
+
         Args:
             node: Field that is being visited
             key: int, index of the current node in the parent list
@@ -254,7 +257,10 @@ class SplitQueryVisitor(Visitor):
         child_type_name, child_selection_set = \
             self._get_child_root_vertex_field_name_and_selection_set(node)
 
-        if self._try_get_stitch_fields(node) is None:
+        # Get the tuple used as key into dict of property fields used in stitch
+        type_name_field_name = (self.type_info.get_parent_type().name, node.name.value)
+
+        if edge_field_descriptor not in self.edge_to_stitch_fields:  # No stitch at this field
             # The type at the end of the edge doesn't cross schemas, check its schema id
             self._check_or_set_schema_id(child_type_name)
             return
@@ -266,13 +272,12 @@ class SplitQueryVisitor(Visitor):
                 u'vertices between schemas.'.format(node)
             )
 
-        parent_field_name, child_field_name = self._try_get_stitch_fields(node)
+        parent_field_name, child_field_name = self.edge_to_stitch_fields[edge_field_descriptor]
 
-        # Get path to the property field used in stitch in parent, creating a new field if needed
+        # Get path to the property fields used in stitching, creating new fields if needed
         parent_field_path = self._process_parent_field_get_field_path(
             node, key, parent, path, parent_field_name
         )
-        # Get path to the property field used in stitch in parent, creating a new field if needed
         child_field_path = self._process_child_field_get_field_path(
             child_selection_set.selections, child_field_name
         )
@@ -281,29 +286,14 @@ class SplitQueryVisitor(Visitor):
         child_query_ast = _create_query_document(child_type_name, child_selection_set)
         child_query_node = SubQueryNode(child_query_ast)
 
-        # Create and add QueryConnection to parent and child
+        # Create and add QueryConnections to parent and child
         self._add_query_connections(self.root_query_node, child_query_node, parent_field_path,
                                     child_field_path)
 
         if parent[key] is None:
-            return REMOVE  # Delete branch (aka delete the None)
+            return REMOVE  # Delete branch (delete the None without affecting visitor traversal)
         else:
             return False  # Skip visiting the branch
-
-    def _try_get_stitch_fields(self, node):
-        """Return names of parent and child stitch fields, or None if there is no stitch."""
-        # Get whether or not there is a stitch here, based on name of the type and field
-        # This is only necessary because schemas do not keep track of schema directives
-        # correctly. Once that is fixed, TypeInfo should be all that's needed to check for
-        # stitch directives, and edge_to_stitch_fields can be removed.
-        parent_type_name = self.type_info.get_parent_type().name
-        edge_field_name = node.name.value
-        edge_field_descriptor = (parent_type_name, edge_field_name)
-
-        if edge_field_descriptor not in self.edge_to_stitch_fields:  # no stitch at this field
-            return None
-
-        return self.edge_to_stitch_fields[edge_field_descriptor]
 
     def _check_or_set_schema_id(self, type_name):
         """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
@@ -344,9 +334,8 @@ class SplitQueryVisitor(Visitor):
             node: Node
 
         Returns:
-            Tuple[str, SelectionSet or None], name and selection set of the child branch of
-            the AST cut off at node. If the node is a property field, it will have no selection
-            set
+            Tuple[str, SelectionSet or None], name and selection set of the root vertex field
+            of the child branch of the AST cut off at node
         """
         child_type = self.type_info.get_type()  # GraphQLType
         if child_type is None:
@@ -360,9 +349,9 @@ class SplitQueryVisitor(Visitor):
         child_type_name = child_type.name
         child_selection_set = node.selection_set
 
-        # Adjust for type coercion due to the sink_type being an interface or union
+        # Adjust for type coercion
         if (
-            child_selection_set is not None and  # A vertex field
+            child_selection_set is not None and
             len(child_selection_set.selections) == 1 and
             isinstance(child_selection_set.selections[0], ast_types.InlineFragment)
         ):
@@ -373,37 +362,49 @@ class SplitQueryVisitor(Visitor):
         return child_type_name, child_selection_set
 
     def _process_parent_field_get_field_path(self, node, key, parent, path, parent_field_name):
-        # TODO: docstrings
-        # TODO: can't replace fields so simply, all property fields must come before all
-        # vertex fields
-        # Also just don't directly edit. Make new function that takes in a selection set,
-        # makes a shallow copy, and adds the new property field behind the last property field
+        """Modify fields, return path to parent property field used to stitch.
 
+        If a property field with the specified name already exists, return a path to this field,
+        and replace the current node by None to be deleted later.
+        If not, create a new property field with the specified name, insert it after all
+        existing property fields, and remove the current node.
+
+        Args:
+            node: Field
+            key: int
+            parent: List[Union[Field, InlineFragment]]
+            path: List[Union[int, str]]
+            parent_field_name: str
+
+        Returns:
+            List[Union[int, str]]
+        """
         # Check for existing field in parent
         parent_field, parent_field_index = try_get_ast_and_index(
             parent, parent_field_name, ast_types.Field
         )
         # Process parent field, and get parent field path
         if parent_field is None:  # No existing source property field
-            # Delete current field, add new property field behind the last property field, which
-            # is guaranteed to be before the deleted field. Thus the visitor's walk is not
-            # affected
-            parent_field = ast_types.Field(
-                name=ast_types.Name(value=parent_field_name)
-            )
-            parent.pop(key)  # Delete current field
-            # Add new field
+            # Delete current field, add new property field.
+            #
             # The new property field must occur before all existing vertex fields due to
             # the compiler's requirements. It should also not affect the index of existing
             # property fields, since such fields may have been used in previous stitching
             # edges, and their paths, which includes their index in the list, would become
-            # invalid if the positions of these property fields changed. Thus, it will be added
-            # between all existing property fields and all existing vertex fields
+            # invalid if the positions of these property fields changed. Thus, the new field
+            # will be added between all existing property fields and all existing vertex fields
+            #
+            # Since the new field will be added before or at the location of the current field,
+            # which will be removed, the part of the list of selections after the current field
+            # will be unaffected, and the visitor's traversal continues as normal
+            parent_field = ast_types.Field(
+                name=ast_types.Name(value=parent_field_name)
+            )
+            parent.pop(key)  # Delete current field
             parent_field_index = self._insert_new_property_field(parent, parent_field)
         else:
-            # Remove stump field, pass its directives to the stitch source property field
-            # Deleting the field directly affects the visitor's traversal, so replace this
-            # node by None here, and return REMOVE at the end of enter_Field
+            # Remove stump field. Deleting the field directly affects the visitor's traversal,
+            # so replace this node by None here, and return REMOVE at the end of enter_Field
             parent[key] = None
 
         # Valid existing directives are passed down
@@ -414,15 +415,23 @@ class SplitQueryVisitor(Visitor):
         return parent_field_path
 
     def _process_child_field_get_field_path(self, child_selections, child_field_name):
-        # TODO: docstrings
+        """Create new field if needed, return path to parent property field used to stitch.
+
+        Args:
+            child_selections: List[Union[Field, InlineFragment]]
+            child_field_name: str
+
+        Returns:
+            List[Union[int, str]]
+        """
         # Check for existing field in child
         child_field, child_field_index = try_get_ast_and_index(
             child_selections, child_field_name, ast_types.Field
         )
         # Process child field, and get child field path
         if child_field is None:
-            # Add new field to end of child's selection set, behind all existing property
-            # fields and before all existing vertex fields
+            # Add new field to child's selection set, between all existing property fields
+            # and all existing vertex fields
             child_field = ast_types.Field(
                 name=ast_types.Name(value=child_field_name)
             )
@@ -462,7 +471,6 @@ class SplitQueryVisitor(Visitor):
             index_to_insert = len(selections)
         selections.insert(index_to_insert, new_field)
         return index_to_insert
-
 
     def _add_directives_from_edge(self, field, new_directives):
         """Add new directives to field as necessary, raising error for illegal duplicates.
@@ -535,8 +543,7 @@ def _create_query_document(root_vertex_field_name, root_selection_set):
                             # NOTE: if the root_vertex_field_name does not actually exist
                             # as a root field (not all types are required to have a
                             # corresponding root vertex field), then this query will be
-                            # invalid, which will noticed and reported by the time that
-                            # the child SubQueryNode is visited
+                            # invalid
                             selection_set=root_selection_set,
                             directives=[],
                         )
