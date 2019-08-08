@@ -15,11 +15,15 @@ from .utils import SchemaStructureError, try_get_ast, try_get_ast_and_index
 
 # NOTE: proposal: add unique @output at this stage, keep track of where fields are by
 # keeping track of these uniquely named outputs
+# The step of figuring out where to put filters is hard enough on its own, ok to have all the
+# complexity to be in this step
 
 
 QueryConnection = namedtuple(
     'QueryConnection', (
         'sink_query_node',  # SubQueryNode
+        'source_field_output_name',  # str
+        'sink_field_output_name',  # str
         'source_field_path',
         # List[Union[int, str]], the attribute names or list indices used to access the property
         # field used in the stitch, starting from the root of the source AST
@@ -132,6 +136,8 @@ class CheckQueryIsValidToSplit(Visitor):
     """Check the query only has supported directives, and its fields are correctly ordered."""
 
     supported_directives = frozenset(('filter', 'output', 'optional', 'stitch'))
+    # This is pretty restrictive, tags that don't cross boundaries are actually ok, but
+    # figure out later
 
     def enter_Directive(self, node, *args):
         """Check that the directive is supported."""
