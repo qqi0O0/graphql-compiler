@@ -154,22 +154,22 @@ class CheckQueryIsValidToSplit(Visitor):
                 past_property_fields = True
 
  
-def _is_property_field(field):
+def _is_property_field(selection):
     """Return True if field is a property field, False if a vertex field or a type coercion."""
-    if isinstance(field, ast_types.InlineFragment):
+    if isinstance(selection, ast_types.InlineFragment):
         return False
-    if isinstance(field, ast_types.Field):
+    if isinstance(selection, ast_types.Field):
         if (
-            field.selection_set is None or
-            field.selection_set.selections is None or
-            field.selection_set.selections == []
+            selection.selection_set is None or
+            selection.selection_set.selections is None or
+            selection.selection_set.selections == []
         ):
             return True
         else:
             return False
     else:
         raise AssertionError(
-            u'Input field "{}" is not of type Field or InlineFragment.'.format(field)
+            u'Input field "{}" is not of type Field or InlineFragment.'.format(selection)
         )
 
 
@@ -260,7 +260,7 @@ class SplitQueryVisitor(Visitor):
         # Get the tuple used as key into dict of property fields used in stitch
         type_name_field_name = (self.type_info.get_parent_type().name, node.name.value)
 
-        if edge_field_descriptor not in self.edge_to_stitch_fields:  # No stitch at this field
+        if type_name_field_name not in self.edge_to_stitch_fields:  # No stitch at this field
             # The type at the end of the edge doesn't cross schemas, check its schema id
             self._check_or_set_schema_id(child_type_name)
             return
@@ -272,8 +272,7 @@ class SplitQueryVisitor(Visitor):
                 u'vertices between schemas.'.format(node)
             )
 
-        parent_field_name, child_field_name = self.edge_to_stitch_fields[edge_field_descriptor]
-
+        parent_field_name, child_field_name = self.edge_to_stitch_fields[type_name_field_name]
         # Get path to the property fields used in stitching, creating new fields if needed
         parent_field_path = self._process_parent_field_get_field_path(
             node, key, parent, path, parent_field_name
@@ -285,7 +284,6 @@ class SplitQueryVisitor(Visitor):
         # Create child AST around the pruned branch, and child SubQueryNode around the AST
         child_query_ast = _create_query_document(child_type_name, child_selection_set)
         child_query_node = SubQueryNode(child_query_ast)
-
         # Create and add QueryConnections to parent and child
         self._add_query_connections(self.root_query_node, child_query_node, parent_field_path,
                                     child_field_path)
@@ -331,7 +329,7 @@ class SplitQueryVisitor(Visitor):
         matches up with node.
 
         Args:
-            node: Node
+            node: Field, the node that the visitor is currently on
 
         Returns:
             Tuple[str, SelectionSet or None], name and selection set of the root vertex field
@@ -367,17 +365,24 @@ class SplitQueryVisitor(Visitor):
         If a property field with the specified name already exists, return a path to this field,
         and replace the current node by None to be deleted later.
         If not, create a new property field with the specified name, insert it after all
-        existing property fields, and remove the current node.
+        existing property fields, remove the current node, and return the path to the newly
+        added field.
 
         Args:
-            node: Field
-            key: int
-            parent: List[Union[Field, InlineFragment]]
-            path: List[Union[int, str]]
-            parent_field_name: str
+            node: Field, the node that we're currently on
+            key: int, the index of the node in parent
+            parent: List[Union[Field, InlineFragment]], a list of fields and type coercions
+                    containing the current node. We search for a property field with the
+                    input field name in this list, and modify this list as we insert new fields,
+                    and replace or remove existing fields.
+            path: List[Union[int, str]], listing the attribute names or list indices used to
+                  index into the AST, starting from the root, to reach the current node
+            parent_field_name: str, the name of the property field we're searching for in
+                               parent
 
         Returns:
-            List[Union[int, str]]
+            List[Union[int, str]], listing the attribute names of list indices used to index
+            into the ast, starting at the root, to reach the property field used in stitching
         """
         # Check for existing field in parent
         parent_field, parent_field_index = try_get_ast_and_index(
@@ -418,11 +423,16 @@ class SplitQueryVisitor(Visitor):
         """Create new field if needed, return path to parent property field used to stitch.
 
         Args:
-            child_selections: List[Union[Field, InlineFragment]]
-            child_field_name: str
+            child_selections: List[Union[Field, InlineFragment]], a list of fields and type
+                              coercions, where we search for a property field with the input
+                              field name. We may modify this list by inserting a new field
+                              if the property field is not found
+            child_field_name: str, the name of the property field we're searching for in
+                              child_selections
 
         Returns:
-            List[Union[int, str]]
+            List[Union[int, str]], listing the attribute names of list indices used to index
+            into the ast, starting at the root, to reach the property field used in stitching
         """
         # Check for existing field in child
         child_field, child_field_index = try_get_ast_and_index(
@@ -461,8 +471,10 @@ class SplitQueryVisitor(Visitor):
             if _is_property_field(selection):
                 if index_to_insert is not None:
                     raise AssertionError(
-                        u'Property field come after vertex field, and was not caught in the '
-                        u'validation step.'
+                        u'Property field {} comes after some vertex field in selection {}, and '
+                        u'this was unexpectedly not caught in the valiation step.'.format(
+                            selection, selections
+                        )
                     )
             else:
                 if index_to_insert is None:
@@ -529,6 +541,7 @@ class SplitQueryVisitor(Visitor):
                 u'Unreachable code reached. The schema id of query piece "{}" has not been '
                 u'determined.'.format(print_ast(self.root_query_node.query_ast))
             )
+
 
 def _create_query_document(root_vertex_field_name, root_selection_set):
     """Return a Document representing a query with the specified name and selection set."""
