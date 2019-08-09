@@ -181,7 +181,8 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
                 # a property field used in stitching. If no existing field has this name, insert
                 # the new property field to end of property fields. If some existing field has
                 # this name, replace the existing field with the returned field
-                pass
+                new_selections = replace_or_insert_property_field(new_selections, new_selection)
+                # else modified but if doesn't, hmm
             else:
                 # Changes were made somewhere down the line, append changed version to end
                 new_selections.append(new_selection)
@@ -208,20 +209,26 @@ def _split_query_at_field(query_node, ast, parent_selections, type_info, parent_
     )
     # Add @output if needed, record out_name
     parent_output_name = _get_out_name_or_add_output_directive(parent_property_field)
+    # parent selections isn't modified until level above
 
     # Deal with child
     child_type_name, child_selections = \
         _get_child_root_vertex_field_name_and_selection_set(ast, type_info)
     # Get existing field with name in child
     child_property_field = _get_property_field_to_return(child_selections, child_field_name, [])
+    # Add @output if needed, record out_name
+    child_output_name = _get_out_name_or_add_output_directive(child_property_field)
+    # Get new child_selections
+    child_selections = _replace_or_insert_property_field(child_selections, child_property_field)
 
-    # want function that returns a copy of the input list where it replaces any existing
-    # property field of the given name, or inserts the new field if there is no existing field
-    # of the same name
+    # Wrap around
+    child_query_ast = _create_query_document(child_type_name, child_selections)
+    child_query_node = SubQueryNode(child_query_ast)
 
+    # Create and add Queryconnections
+    _add_query_connections(query_node, child_query_node, parent_output_name, child_output_name)
 
-    # Need to keep track of these output names, but is ok -- can just add the connection in
-    # right away
+    return parent_property_field
 
 
 def _get_property_field_to_return(selections, field_name, directives_from_edge):
@@ -287,7 +294,7 @@ def _add_directives_from_edge(field, new_directives):
             )
 
 
-def _get_child_root_vertex_field_name_and_selection_set(ast, type_info):
+def _get_child_root_vertex_field_name_and_selections(ast, type_info):
     """Get the root field name and selection set of the child AST split at the input node.
 
     Takes care of type coercion, so the root field name will be the coerced type rather than
@@ -297,8 +304,8 @@ def _get_child_root_vertex_field_name_and_selection_set(ast, type_info):
     Args:
 
     Returns:
-        Tuple[str, SelectionSet or None], name and selection set of the root vertex field
-        of the child branch of the AST cut off at node
+        Tuple[str, List[Union[Field, InlineFragment]]], name and selection set of the root
+        vertex field of the child branch of the AST cut off at node
     """
     child_type = type_info.get_type()  # GraphQLType
     if child_type is None:
@@ -322,7 +329,7 @@ def _get_child_root_vertex_field_name_and_selection_set(ast, type_info):
         child_type_name = type_coercion_inline_fragment.type_condition.name.value
         child_selection_set = type_coercion_inline_fragment.selection_set
 
-    return child_type_name, child_selection_set
+    return child_type_name, child_selection_set.selections
 
 
 def _check_query_is_valid_to_split(schema, query_ast):
@@ -704,59 +711,56 @@ class SplitQueryVisitor(Visitor):
             )
 
 
-def _insert_new_property_field(selections, new_field):
-    """Insert new_field into selections, between existing property fields and vertex fields.
+def _replace_or_insert_property_field(selections, new_field):
+    """Return a copy of the input selections, with new_field inserted or added in place.
 
-    In selections, all property fields, if any, must occur before all vertex fields, if any.
+    If there is an existing field with the same name as new_field, replace. Otherwise, insert
+    new_field after the last existing property field.
+
+    Inputs not modified.
 
     Args:
-        selections: List[Field], where all property fields occur before all vertex fields.
-                    Modified by this function
+        selections: List[Union[Field, InlineFragment]], where all property fields occur
+                    before all vertex fields.
         new_field: Field object, to be inserted into selections
 
     Returns:
-        int, the index where the new field was inserted
+        List[Union[Field, InlineFragment]]
     """
-    index_to_insert = None
+    selections = copy(selections)
     for index, selection in enumerate(selections):
-        if _is_property_field(selection):
-            if index_to_insert is not None:
-                raise AssertionError(
-                    u'Property field {} comes after some vertex field in selection {}, and '
-                    u'this was not caught in a prior valiation step.'.format(
-                        selection, selections
-                    )
-                )
-        else:
-            if index_to_insert is None:
-                index_to_insert = index
-    if index_to_insert is None:  # No vertex fields
-        index_to_insert = len(selections)
-    selections.insert(index_to_insert, new_field)
-    return index_to_insert
+        if (
+            isinstance(selection, ast_types.Field) and
+            selection.name.value == new_field.name.value
+        ):
+            selections[index] = new_field
+            return selections
+        if not _is_property_field(selection):
+            selesctions.insert(index, new_field)
+            return selections
 
 
-def _add_query_connections(parent_query_node, child_query_node, parent_field_path,
-                           child_field_path):
+def _add_query_connections(parent_query_node, child_query_node, parent_field_output_name,
+                           child_field_output_name):
     """Modify parent and child SubQueryNodes by adding QueryConnections between them."""
     # Create QueryConnections
     new_query_connection_from_parent = QueryConnection(
         sink_query_node=child_query_node,
-        source_field_path=parent_field_path,
-        sink_field_path=child_field_path,
+        source_field_output_name=parent_field_output_name,
+        sink_field_output_name=child_field_output_name,
     )
     new_query_connection_from_child = QueryConnection(
         sink_query_node=parent_query_node,
-        source_field_path=child_field_path,
-        sink_field_path=parent_field_path,
+        source_field_output_name=child_field_output_name,
+        sink_field_output_name=parent_field_output_name,
     )
     # Add QueryConnections
     parent_query_node.child_query_connections.append(new_query_connection_from_parent)
     child_query_node.parent_query_connection = new_query_connection_from_child
 
 
-def _create_query_document(root_vertex_field_name, root_selection_set):
-    """Return a Document representing a query with the specified name and selection set."""
+def _create_query_document(root_vertex_field_name, root_selections):
+    """Return a Document representing a query with the specified name and selections."""
     return ast_types.Document(
         definitions=[
             ast_types.OperationDefinition(
@@ -769,7 +773,9 @@ def _create_query_document(root_vertex_field_name, root_selection_set):
                             # as a root field (not all types are required to have a
                             # corresponding root vertex field), then this query will be
                             # invalid
-                            selection_set=root_selection_set,
+                            selection_set=ast_types.SelectionSet(
+                                selections=root_selections,
+                            )
                             directives=[],
                         )
                     ]
