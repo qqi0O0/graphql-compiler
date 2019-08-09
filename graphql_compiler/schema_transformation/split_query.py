@@ -118,9 +118,14 @@ def _split_query_one_level(query_node, type_info):
 
 def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
                                edge_to_stitch_fields):
-    """Always return Node or None, let the next level deal with sorting the output?
+    """Always return Node, let the next level deal with sorting the output.
 
     child not modify parent list
+
+    parent_selections contains all property fields in the previous level of fields, but not
+    necessarily all fields (some edge fields may not be added)
+
+    No input is modified
     """
     # Check if split here, if so, split and end
     if isinstance(ast, ast_types.Field):
@@ -138,29 +143,6 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
                 edge_to_stitch_fields[(child_type_name, edge_field_name)]
             new_field = _split_query_at_field(
                 query_node, ast, parent_selections, parent_field_name, child_field_name)
-            # Which list should _split_query_at_field take in? Neither old list nor new list
-            # is complete enough? No, new list is complete, assuming that all property fields
-            # come before all vertex fields
-            # new_field may be None, or a property field, or a vertex field.
-            # If it's a property field, it may
-            # have the same name (and some of the same directives) as an existing property field
-            # or it may be new.
-            # If it's a vertex field, it may be the same object or a different object from the
-            # input
-
-            # Above can't modify the ast, but modifies query_node
-            # Above needs to access parent! Needs to check whether there is existing field of
-            # given name
-            # What if:
-            # Return node if unchanged
-            # Return property field if changed, no matter if based on existing field or totally
-            # new. Then when modifying selections, replace field if seen, or append behind last
-            # property field if not seen
-            # Return shallow copy if changed somewhere down
-            # So if object equality, just append. If not equal but not property field (field
-            # without selection set), append and set flag. If not equal and property field,
-            # search through and replace or insert, and set flag
-            # TODO
             return new_field
 
     # No split here
@@ -170,8 +152,9 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
     made_changes = False
     for selection in selections:
         type_info.enter(selection)
-        # By the time we reach any cross schema edge fields, new_selections contains all
-        # property fields
+        # NOTE: By the time we reach any cross schema edge fields, new_selections contains all
+        # property fields, including any new property fields created by previous cross schema
+        # edge fields
         new_selection = _split_query_ast_recursive(query_node, selection, new_selections,
                                                    type_info, edge_to_stitch_fields)
         if new_selection is not selection:
@@ -181,8 +164,9 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
                 # a property field used in stitching. If no existing field has this name, insert
                 # the new property field to end of property fields. If some existing field has
                 # this name, replace the existing field with the returned field
-                new_selections = replace_or_insert_property_field(new_selections, new_selection)
-                # else modified but if doesn't, hmm
+                new_selections = _replace_or_insert_property_field(new_selections, new_selection)
+                # The current actual selection is ignored, edge field leading to a branch that
+                # will not be added to the output tree
             else:
                 # Changes were made somewhere down the line, append changed version to end
                 new_selections.append(new_selection)
@@ -190,7 +174,13 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
             new_selections.append(new_selection)
         type_info.leave(selection)
     type_info.leave(ast.selection_set)
-    # If made changes, return shallow copied version. If no changes, return input object
+
+    if made_changes:
+        ast_copy = copy(ast)
+        ast_copy.selections = new_selections
+        return ast_copy
+    else:
+        return ast
 
 
 def _split_query_at_field(query_node, ast, parent_selections, type_info, parent_field_name,
