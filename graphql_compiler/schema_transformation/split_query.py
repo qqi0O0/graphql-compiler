@@ -88,17 +88,16 @@ def split_query(query_ast, merged_schema_descriptor):
     root_query_node = SubQueryNode(query_ast)
     type_info = TypeInfo(merged_schema_descriptor.schema)
     query_nodes_to_visit = [root_query_node]
-    intermediate_output_count_holder = [0]
+    intermediate_output_count_holder = [0]  # Current not used
+    # Currently not keeping track of intermediate output names
+    # Probably make a class for it
 
     # Construct full tree of SubQueryNodes in a dfs pattern
     while len(query_nodes_to_visit) > 0:
-        current_node_to_visit = query_nodes_to_visit.pop()
-        split_query_visitor = SplitQueryVisitor(
-            type_info, edge_to_stitch_fields, merged_schema_descriptor.type_name_to_schema_id,
-            current_node_to_visit, intermediate_output_count_holder
-        )
-        visitor = TypeInfoVisitor(type_info, split_query_visitor)
-        current_node_to_visit.query_ast = visit(current_node_to_visit.query_ast, visitor)
+        current_node_to_split = query_nodes_to_visit.pop()
+        
+        _split_query_one_level(current_node_to_split, type_info, edge_to_stitch_fields)
+
         query_nodes_to_visit.extend(
             child_query_connection.sink_query_node
             for child_query_connection in current_node_to_visit.child_query_connections
@@ -107,13 +106,19 @@ def split_query(query_ast, merged_schema_descriptor):
     return root_query_node
 
 
-def _split_query_one_level(query_node, type_info):
-    root_selections = query_node.query_ast.definitions[0].selection_set.selections
-    # Should be something like [Animal], probably only one here
+def _split_query_one_level(query_node, type_info, edge_to_stitch_fields):
+    root_selections = query_node.query_ast.definitions
+    root_selection_ast = root_selections[0]  # OperationDefinition
+    type_info.enter(root_selection_ast)
 
-
-# Need something like TypeInfoVisitor
-# TypeInfo contains enter and leave, which is not bad
+    new_root_selection_set = _split_query_ast_recursive(
+        query_node, root_selection_ast, root_selections, type_info, edge_to_stitch_fields
+    )
+    query_node.query_ast = _create_query_document(
+        query_node.query_ast.definitions[0].selection_set.selections[0].name.value,
+        new_root_selections
+    )
+    type_info.leave(root_selection_ast)
 
 
 def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
