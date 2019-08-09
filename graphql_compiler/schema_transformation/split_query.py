@@ -13,12 +13,6 @@ from ..exceptions import GraphQLValidationError
 from .utils import SchemaStructureError, try_get_ast
 
 
-# NOTE: proposal: add unique @output at this stage, keep track of where fields are by
-# keeping track of these uniquely named outputs
-# The step of figuring out where to put filters is hard enough on its own, ok to have all the
-# complexity to be in this step
-
-
 QueryConnection = namedtuple(
     'QueryConnection', (
         'sink_query_node',  # SubQueryNode
@@ -43,12 +37,16 @@ class SubQueryNode(object):
         # List[SubQueryNode], the queries that depend on the current query
 
 
-SplitQueryDescriptor = namedtuple(
-    'SplitQueryDescriptor', (
-        'root_sub_query_node',
-        'intermediate_output_names',
-    )
-)
+class IntermediateOutNameAssigner(object):
+    def __init__(self):
+        self.intermediate_output_names = {}
+        self.intermediate_output_count = 0
+
+    def assign_and_return_out_name(self):
+        out_name = '__intermediate_output_' + str(self.intermediate_output_count)
+        self.intermediate_output_count += 1
+        self.intermediate_output_names.add(out_name)
+        return out_name
 
 
 def split_query(query_ast, merged_schema_descriptor):
@@ -89,16 +87,14 @@ def split_query(query_ast, merged_schema_descriptor):
     root_query_node = SubQueryNode(query_ast)
     type_info = TypeInfo(merged_schema_descriptor.schema)
     query_nodes_to_visit = [root_query_node]
-    intermediate_output_count_holder = [0]  # Current not used
-    # Currently not keeping track of intermediate output names
-    # Probably make a class for it
+    intermediate_out_name_assigner = IntermediateOutNameAssigner()
 
     # Construct full tree of SubQueryNodes in a dfs pattern
     while len(query_nodes_to_visit) > 0:
         current_node_to_split = query_nodes_to_visit.pop()
         
         _split_query_one_level(current_node_to_split, type_info, edge_to_stitch_fields,
-                               type_name_to_schema_id)
+                               type_name_to_schema_id, intermediate_out_name_assigner)
 
         query_nodes_to_visit.extend(
             child_query_connection.sink_query_node
@@ -108,13 +104,15 @@ def split_query(query_ast, merged_schema_descriptor):
     return root_query_node
 
 
-def _split_query_one_level(query_node, type_info, edge_to_stitch_fields, type_name_to_schema_id):
+def _split_query_one_level(query_node, type_info, edge_to_stitch_fields, type_name_to_schema_id,
+                           intermediate_out_name_assigner):
     root_selections = query_node.query_ast.definitions
     root_selection_ast = root_selections[0]  # OperationDefinition
     type_info.enter(root_selection_ast)
 
     new_root_selection_set = _split_query_ast_recursive(
-        query_node, root_selection_ast, root_selections, type_info, edge_to_stitch_fields
+        query_node, root_selection_ast, root_selections, type_info, edge_to_stitch_fields,
+        intermediate_out_name_assigner
     )
     query_node.query_ast = _create_query_document(
         query_node.query_ast.definitions[0].selection_set.selections[0].name.value,
@@ -125,7 +123,8 @@ def _split_query_one_level(query_node, type_info, edge_to_stitch_fields, type_na
 
 
 def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
-                               edge_to_stitch_fields, type_name_to_schema_id):
+                               edge_to_stitch_fields, type_name_to_schema_id,
+                               intermediate_out_name_assigner):
     """Always return Node, let the next level deal with sorting the output.
 
     child not modify parent list
@@ -150,7 +149,9 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
             parent_field_name, child_field_name = \
                 edge_to_stitch_fields[(child_type_name, edge_field_name)]
             new_field = _split_query_at_field(
-                query_node, ast, parent_selections, parent_field_name, child_field_name)
+                query_node, ast, parent_selections, parent_field_name, child_field_name,
+                intermediate_out_name_assigner
+            )
             return new_field
 
     # No split here
@@ -220,7 +221,7 @@ def _check_or_set_schema_id(query_node, type_name, type_name_to_schema_id):
 
 
 def _split_query_at_field(query_node, ast, parent_selections, type_info, parent_field_name,
-                          child_field_name):
+                          child_field_name, intermediate_out_name_assigner):
     """
     Modifies query_node to add another child, that has a modified version of the ast branch put
     in.
@@ -234,7 +235,9 @@ def _split_query_at_field(query_node, ast, parent_selections, type_info, parent_
         parent_selections, parent_field_name, ast.directives
     )
     # Add @output if needed, record out_name
-    parent_output_name = _get_out_name_or_add_output_directive(parent_property_field)
+    parent_output_name = _get_out_name_or_add_output_directive(
+        parent_property_field, intermediate_out_name_assigner
+    )
     # parent selections isn't modified until level above
 
     # Deal with child
@@ -243,7 +246,9 @@ def _split_query_at_field(query_node, ast, parent_selections, type_info, parent_
     # Get existing field with name in child
     child_property_field = _get_property_field_to_return(child_selections, child_field_name, [])
     # Add @output if needed, record out_name
-    child_output_name = _get_out_name_or_add_output_directive(child_property_field)
+    child_output_name = _get_out_name_or_add_output_directive(
+        child_property_field, intermediate_out_name_assigner
+    )
     # Get new child_selections
     child_selections = _replace_or_insert_property_field(child_selections, child_property_field)
 
@@ -558,7 +563,7 @@ def _get_output_directive(out_sname):
     )
 
 
-def _get_out_name_or_add_output_directive(field):
+def _get_out_name_or_add_output_directive(field, intermediate_out_name_assigner):
     """Return out_name of @output on field, creating new @output if needed.
 
     Args:
@@ -568,6 +573,7 @@ def _get_out_name_or_add_output_directive(field):
     output_directive = try_get_ast(field.directives, u'output', ast_types.Directive)
     if output_directive is None:
         # Create and add new directive to field
+        out_name = intermediate_out_name_assigner.assign_and_return_out_name()
         out_name = _assign_and_return_output_name()
         output_directive = _get_output_directive(out_name)
         if field.directives is None:
@@ -576,10 +582,3 @@ def _get_out_name_or_add_output_directive(field):
         return out_name
     else:
         return output_directive.arguments[0].value.value  # Location of value of out_name
-
-
-def _assign_and_return_output_name(count=[0]):
-    # TODO: very bad, replace later
-    name = '__intermediate_output_' + str(count[0])
-    count[0] += 1
-    return name
