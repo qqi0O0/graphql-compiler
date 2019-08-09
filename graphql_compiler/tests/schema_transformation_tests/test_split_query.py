@@ -73,6 +73,7 @@ class TestSplitQuery(unittest.TestCase):
     # test for edge cut off, new property field added NOT in place
     # type coercion in different places
     # Test like where the Cat type didn't have a corresponding root field
+    # original unmodified?
 
     def test_no_existing_fields_split(self):
         query_str = dedent('''\

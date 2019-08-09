@@ -22,14 +22,8 @@ from .utils import SchemaStructureError, try_get_ast, try_get_ast_and_index
 QueryConnection = namedtuple(
     'QueryConnection', (
         'sink_query_node',  # SubQueryNode
-        'source_field_output_name',  # str
-        'sink_field_output_name',  # str
-        'source_field_path',
-        # List[Union[int, str]], the attribute names or list indices used to access the property
-        # field used in the stitch, starting from the root of the source AST
-        'sink_field_path',
-        # List[Union[int, str]], the attribute names or list indices used to access the property
-        # field used in the stitch, starting from the root of the sink AST
+        'source_field_output_name',  # str, unique output name identifying the source field
+        'sink_field_output_name',  # str, unique out_name identifying sink property field
     )
 )
 
@@ -47,6 +41,14 @@ class SubQueryNode(object):
         # SubQueryNode or None, the query that the current query depends on
         self.child_query_connections = []
         # List[SubQueryNode], the queries that depend on the current query
+
+
+SplitQueryDescriptor = namedtuple(
+    'SplitQueryDescriptor', (
+        'root_sub_query_node',
+        'intermediate_output_names',
+    )
+)
 
 
 def split_query(query_ast, merged_schema_descriptor):
@@ -86,13 +88,14 @@ def split_query(query_ast, merged_schema_descriptor):
     root_query_node = SubQueryNode(query_ast)
     type_info = TypeInfo(merged_schema_descriptor.schema)
     query_nodes_to_visit = [root_query_node]
+    intermediate_output_count_holder = [0]
 
     # Construct full tree of SubQueryNodes in a dfs pattern
     while len(query_nodes_to_visit) > 0:
         current_node_to_visit = query_nodes_to_visit.pop()
         split_query_visitor = SplitQueryVisitor(
             type_info, edge_to_stitch_fields, merged_schema_descriptor.type_name_to_schema_id,
-            current_node_to_visit
+            current_node_to_visit, intermediate_output_count_holder
         )
         visitor = TypeInfoVisitor(type_info, split_query_visitor)
         current_node_to_visit.query_ast = visit(current_node_to_visit.query_ast, visitor)
@@ -163,7 +166,7 @@ class CheckQueryIsValidToSplit(Visitor):
             else:
                 past_property_fields = True
 
- 
+
 def _is_property_field(selection):
     """Return True if selection is a property field, False if a vertex field or type coercion."""
     if isinstance(selection, ast_types.InlineFragment):
@@ -219,7 +222,8 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
 
 class SplitQueryVisitor(Visitor):
     """Prune branches of AST and build SubQueryNodes during traversal."""
-    def __init__(self, type_info, edge_to_stitch_fields, type_name_to_schema_id, root_query_node):
+    def __init__(self, type_info, edge_to_stitch_fields, type_name_to_schema_id,
+                 root_query_node, intermediate_output_count_holder):
         """Create a SubQueryNode with one level of children from the visited AST.
 
         The visitor will modify the AST by cutting off branches where stitches occur, and
@@ -241,6 +245,7 @@ class SplitQueryVisitor(Visitor):
         self.edge_to_stitch_fields = edge_to_stitch_fields
         self.type_name_to_schema_id = type_name_to_schema_id
         self.root_query_node = root_query_node
+        self.intermediate_output_count_holder = intermediate_output_count_holder
 
     def enter_Field(self, node, key, parent, path, *args):
         """Check for split at the current field, creating a new SubQueryNode if needed.
@@ -298,7 +303,11 @@ class SplitQueryVisitor(Visitor):
         _add_query_connections(self.root_query_node, child_query_node, parent_field_path,
                                child_field_path)
 
-        return False  # Skip visiting the branch
+        if parent[key] is None:
+            return REMOVE  # None will be removed after all siblings visited
+            # Issue: extremely confusing, modifications both in place and in return
+        else:
+            return False  # Skip visiting the branch, since it has been replaced by an old branch
 
     def _check_or_set_schema_id(self, type_name):
         """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
@@ -367,11 +376,15 @@ class SplitQueryVisitor(Visitor):
 
         return child_type_name, child_selection_set
 
-    def _process_parent_field_get_field_path(self, node, key, parent, path, parent_field_name):
-        """Modify fields, return path to parent property field used to stitch.
+    def _process_parent_field_get_out_name(self, node, key, parent, path, parent_field_name):
+        """Modify fields, return unique name of the output on parent property field.
 
-        If a property field with the specified name already exists, return a path to this field,
-        and replace the current node by None to be deleted later.
+        If a property field with the specified name already exists, add an @output to it
+        if needed, return the out_name, replace the current node by None to be deleted later.
+        If a property field with the specified name does not exist, modify parent by inserting
+        a new property field to the beginning of the list, and remove the current node. Create
+        an @output on the newly created field and return the out_name.
+
         If not, create a new property field with the specified name, insert it after all
         existing property fields, remove the current node, and return the path to the newly
         added field.
@@ -389,8 +402,8 @@ class SplitQueryVisitor(Visitor):
                                parent
 
         Returns:
-            List[Union[int, str]], listing the attribute names of list indices used to index
-            into the ast, starting at the root, to reach the property field used in stitching
+            str, name of the out_name of the output directive on the parent field, whether
+            pre-existing or newly made
         """
         # Check for existing field in parent
         parent_field, parent_field_index = try_get_ast_and_index(
@@ -581,3 +594,35 @@ def _create_query_document(root_vertex_field_name, root_selection_set):
             )
         ]
     )
+
+
+def _get_output_directive(out_sname):
+    return ast_types.Directive(
+        name=ast_types.Name(value=u'output'),
+        arguments=[
+            ast_types.Argument(
+                name=ast_types.Name(value=u'out_name'),
+                value=ast_types.StringValue(value=out_name),
+            ),
+        ],
+    )
+
+
+def _get_out_name_or_add_output_directive(field):
+    """Return out_name of @output on field, creating new @output if needed.
+
+    Args:
+        field: Field object, whose directives we may modify
+    """
+    # Check for existing directive
+    output_directive = try_get_ast(field.directives, u'output', ast_types.Directive)
+    if output_directive is None:
+        # Create and add new directive to field
+        out_name = _assign_and_return_output_name()
+        output_directive = _get_output_directive(out_name)
+        if field.directives is None:
+            field.directives = []
+        field.directives.append(output_directive)
+        return out_name
+    else:
+        return output_directive.arguments[0].value.value  # Location of value of out_name
