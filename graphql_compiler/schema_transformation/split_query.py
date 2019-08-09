@@ -107,6 +107,79 @@ def split_query(query_ast, merged_schema_descriptor):
     return root_query_node
 
 
+def _split_query_one_level(query_node, type_info):
+    root_selections = query_node.query_ast.definitions[0].selection_set.selections
+    # Should be something like [Animal], probably only one here
+
+
+# Need something like TypeInfoVisitor
+# TypeInfo contains enter and leave, which is not bad
+
+
+def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
+                               edge_to_stitch_fields):
+    """Always return Node or None, let the next level deal with sorting the output?
+
+    child not modify parent list
+    """
+    # Check if split here, if so, split and end
+    if isinstance(ast, ast_types.Field):
+        child_type = type_info.get_type()  # GraphQLType
+        if child_type is None:
+            raise SchemaStructureError(
+                u'The provided merged schema descriptor may be invalid.'
+            )
+        while isinstance(child_type, (GraphQLList, GraphQLNonNull)):  # Unwrap List and NonNull
+            child_type = child_type.of_type
+        child_type_name = child_type.name
+        edge_field_name = ast.name.value
+        if (child_type_name, edge_field_name) in edge_to_stitch_fields:
+            parent_field_name, child_field_name = \
+                edge_to_stitch_fields[(child_type_name, edge_field_name)]
+            new_field = _split_query_at_field(
+                query_node, ast, parent_field_name, child_field_name)
+            # Which list should _split_query_at_field take in? Neither old list nor new list
+            # is complete enough? No, new list is complete, assuming that all property fields
+            # come before all vertex fields
+            # new_field may be None, or a property field, or a vertex field.
+            # If it's a property field, it may
+            # have the same name (and some of the same directives) as an existing property field
+            # or it may be new.
+            # If it's a vertex field, it may be the same object or a different object from the
+            # input
+
+            # Above can't modify the ast, but modifies query_node
+            # Above needs to access parent! Needs to check whether there is existing field of
+            # given name
+            # What if:
+            # Return node if unchanged
+            # Return property field if changed, no matter if based on existing field or totally
+            # new. Then when modifying selections, replace field if seen, or append behind last
+            # property field if not seen
+            # Return shallow copy if changed somewhere down
+            # So if object equality, just append. If not equal but not property field (field
+            # without selection set), append and set flag. If not equal and property field,
+            # search through and replace or insert, and set flag
+            # TODO
+            return new_field
+
+    # No split here
+    selections = ast.selection_set.selections
+    type_info.enter(ast.selection_set)
+    new_selections = []
+    made_changes = False
+    for selection in selections:
+        type_info.enter(selection)
+        new_selection = _split_query_ast_recursive(query_node, selection, new_selections,
+                                                   type_info, edge_to_stitch_fields)
+        if new_selection is not selection:
+            made_changes = True
+        # Add on new_selection
+        # Cases: unchanged (append), None (which means existing field got changed!), or property field
+        type_info.leave(selection)
+    type_info.leave(ast.selection_set)
+
+
 def _check_query_is_valid_to_split(schema, query_ast):
     """Check the query is valid for splitting.
 
