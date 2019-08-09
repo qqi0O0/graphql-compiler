@@ -84,6 +84,7 @@ def split_query(query_ast, merged_schema_descriptor):
     # that's needed to detect and address stitching fields. However, before this issue is
     # fixed, it's necessary to use additional information from pre-processing the schema AST
     edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
+    type_name_to_schema_id = merged_schema_descriptor.type_name_to_schema_id
 
     root_query_node = SubQueryNode(query_ast)
     type_info = TypeInfo(merged_schema_descriptor.schema)
@@ -96,7 +97,8 @@ def split_query(query_ast, merged_schema_descriptor):
     while len(query_nodes_to_visit) > 0:
         current_node_to_split = query_nodes_to_visit.pop()
         
-        _split_query_one_level(current_node_to_split, type_info, edge_to_stitch_fields)
+        _split_query_one_level(current_node_to_split, type_info, edge_to_stitch_fields,
+                               type_name_to_schema_id)
 
         query_nodes_to_visit.extend(
             child_query_connection.sink_query_node
@@ -106,7 +108,7 @@ def split_query(query_ast, merged_schema_descriptor):
     return root_query_node
 
 
-def _split_query_one_level(query_node, type_info, edge_to_stitch_fields):
+def _split_query_one_level(query_node, type_info, edge_to_stitch_fields, type_name_to_schema_id):
     root_selections = query_node.query_ast.definitions
     root_selection_ast = root_selections[0]  # OperationDefinition
     type_info.enter(root_selection_ast)
@@ -118,11 +120,12 @@ def _split_query_one_level(query_node, type_info, edge_to_stitch_fields):
         query_node.query_ast.definitions[0].selection_set.selections[0].name.value,
         new_root_selections
     )
+    assert(query_node.schema_id is not None)
     type_info.leave(root_selection_ast)
 
 
 def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
-                               edge_to_stitch_fields):
+                               edge_to_stitch_fields, type_name_to_schema_id):
     """Always return Node, let the next level deal with sorting the output.
 
     child not modify parent list
@@ -151,6 +154,7 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
             return new_field
 
     # No split here
+    _check_or_set_schema_id(query_node, type_info.get_type().name, type_name_to_schema_id)
     selections = ast.selection_set.selections
     type_info.enter(ast.selection_set)
     new_selections = []
@@ -186,6 +190,33 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
         return ast_copy
     else:
         return ast
+
+
+def _check_or_set_schema_id(query_node, type_name, type_name_to_schema_id):
+    """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
+
+    Args:
+        type_name: str, name of the type whose schema id we're comparing against the
+                   previously recorded schema id
+    """
+    if type_name in type_name_to_schema_id:  # It may be a scalar, and thus not found
+        current_type_schema_id = type_name_to_schema_id[type_name]
+        prior_type_schema_id = query_node.schema_id
+        if prior_type_schema_id is None:  # First time checking schema_id
+            query_node.schema_id = current_type_schema_id
+        elif current_type_schema_id != prior_type_schema_id:
+            # A single query piece has types from two schemas -- merged_schema_descriptor
+            # is invalid: an edge field without a @stitch directive crosses schemas,
+            # or type_name_to_schema_id is wrong
+            raise SchemaStructureError(
+                u'The provided merged schema descriptor may be invalid. Perhaps '
+                u'some edge that does not have a @stitch directive crosses schemas. As '
+                u'a result, query piece "{}", which is in the process of being broken '
+                u'down, appears to contain types from more than one schema. Type "{}" '
+                u'belongs to schema "{}", while some other type belongs to schema "{}".'
+                u''.format(print_ast(query_node.query_ast), type_name,
+                           current_type_schema_id, prior_type_schema_id)
+            )
 
 
 def _split_query_at_field(query_node, ast, parent_selections, type_info, parent_field_name,
