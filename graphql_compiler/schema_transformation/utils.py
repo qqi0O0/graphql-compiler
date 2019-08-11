@@ -149,7 +149,7 @@ def try_get_ast(asts, target_name, target_type):
     for ast in asts:
         if isinstance(ast, target_type) and ast.name.value == target_name:
             return ast
-    return ast
+    return None
 
 
 class CheckValidTypesAndNamesVisitor(Visitor):
