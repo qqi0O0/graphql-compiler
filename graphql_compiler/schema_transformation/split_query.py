@@ -1,6 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
-from copy import copy, deepcopy
+from copy import copy
 
 from graphql.language import ast as ast_types
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit, REMOVE
@@ -684,15 +684,25 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
 
 class SchemaIdSetterVisitor(Visitor):
     def __init__(self, type_info, query_node, type_name_to_schema_id):
+        """Create a visitor for setting the schema_id of the input query node.
+
+        Args:
+            type_info: TypeInfo, used to keep track of types of fields while traversing the AST
+            query_node: SubQueryNode, whose schema_id will be modified
+            type_name_to_schema_id: Dict[str, str], mapping the names of types to the id of the
+                                    schema that they came from
+        """
         self.type_info = type_info
         self.query_node = query_node
         self.type_name_to_schema_id = type_name_to_schema_id
 
     def enter_Field(self, *args):
+        """Check the schema of the type that the field leads to"""
         child_type_name = strip_non_null_and_list_from_type(self.type_info.get_type()).name
         self._check_or_set_schema_id(child_type_name)
 
     def enter_InlineFragment(self, node, *args):
+        """Check the schema of the coerced type."""
         self._check_or_set_schema_id(node.type_condition.name.value)
 
     def _check_or_set_schema_id(self, type_name):
