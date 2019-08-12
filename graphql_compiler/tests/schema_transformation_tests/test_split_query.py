@@ -63,9 +63,31 @@ class TestSplitQuery(unittest.TestCase):
         self.assertEqual(parent_to_child_connection.sink_field_out_name, child_out_name)
         self.assertEqual(child_to_parent_connection.source_field_out_name, child_out_name)
 
+    def _get_intermediate_outputs_set(self, number_of_outputs):
+        output_names = set(
+            '__intermediate_output_' + str(count) for count in range(number_of_outputs)
+        )
+        return frozenset(output_names)
+
     # TODO:
-    # test for bad property and vertex field order
     # Test like where the Cat type didn't have a corresponding root field
+
+    def test_no_split(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                name @output(out_name: "name")
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=query_str,
+            schema_id='first',
+            child_query_nodes_and_out_names=[]
+        )
+        query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(0))
 
     def test_no_existing_fields_split(self):
         query_str = dedent('''\
@@ -107,9 +129,9 @@ class TestSplitQuery(unittest.TestCase):
                 )
             ]
         )
-        # TODO: check intermediate outputs
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_original_unmodified(self):
         query_str = dedent('''\
@@ -168,24 +190,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
-
-    def test_check_edge_branch_removed(self):
-        query_str = dedent('''\
-            {
-              Animal {
-                uuid @output(out_name: "result")
-                out_Animal_Creature {
-                  age @output(out_name: "age")
-                }
-              }
-            }
-        ''')
-        query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
-        parent_ast = query_node.query_ast
-        parent_root_selections = parent_ast.definitions[0].selection_set.selections[0].\
-            selection_set.selections
-        self.assertEqual(len(parent_root_selections), 1)  # check None in second position removed
-        print(query_node.query_ast)  # TODO
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(1))
 
     def test_existing_output_field_in_child(self):
         query_str = dedent('''\
@@ -230,6 +235,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(1))
 
     def test_existing_field_in_both(self):
         query_str = dedent('''\
@@ -276,6 +282,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(1))
 
     def test_nested_query(self):
         query_str = dedent('''\
@@ -331,6 +338,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_existing_optional_on_edge(self):
         query_str = dedent('''\
@@ -374,6 +382,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_existing_optional_on_edge_and_field(self):
         query_str = dedent('''\
@@ -418,56 +427,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
-
-    def test_unsupported_directives(self):
-        query_str = dedent('''\
-            {
-              Animal {
-                color @tag(tag_name: "color")
-                out_Animal_ParentOf {
-                  color @filter(op_name: "=", value: ["%color"])
-                        @output(out_name: "result")
-                }
-              }
-            }
-        ''')
-        with self.assertRaises(GraphQLValidationError):
-            split_query(parse(query_str), basic_merged_schema)
-
-        query_str = dedent('''\
-            {
-              Animal @fold {
-                color @output(out_name: "result")
-              }
-            }
-        ''')
-        with self.assertRaises(GraphQLValidationError):
-            split_query(parse(query_str), basic_merged_schema)
-
-        query_str = dedent('''\
-            {
-              Animal {
-                out_Animal_ParentOf @recurse(depth: 1) {
-                  color @output(out_name: "result")
-                }
-              }
-            }
-        ''')
-        with self.assertRaises(GraphQLValidationError):
-            split_query(parse(query_str), basic_merged_schema)
-
-    def test_invalid_query_nonexistent_field(self):
-        query_str = dedent('''\
-            {
-              Animal {
-                out_Animal_Creature {
-                  thing @output(out_name: "thing")
-                }
-              }
-            }
-        ''')
-        with self.assertRaises(GraphQLValidationError):
-            split_query(parse(query_str), basic_merged_schema)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_type_coercion_before_edge(self):
         query_str = dedent('''\
@@ -517,6 +477,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_interface_type_coercion_after_edge(self):
         query_str = dedent('''\
@@ -562,6 +523,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), interface_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_union_type_coercion_after_edge(self):
         query_str = dedent('''\
@@ -607,6 +569,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), union_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_two_children_stitch_on_same_field(self):
         query_str = dedent('''\
@@ -675,6 +638,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(4))
 
     def test_cross_schema_edge_field_after_normal_vertex_field(self):
         query_str = dedent('''\
@@ -724,6 +688,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(2))
 
     def test_two_edges_on_same_field_in_V(self):
         query_str = dedent('''\
@@ -789,6 +754,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), three_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(3))
 
     def test_two_edges_on_same_field_in_chain(self):
         query_str = dedent('''\
@@ -856,6 +822,7 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), three_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(3))
 
     def test_complex_query_structure(self):
         query_str = dedent('''\
@@ -947,3 +914,83 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
+        self.assertEqual(intermediate_outputs, self._get_intermediate_outputs_set(5))
+
+
+class TestSplitQueryInvalidQuery(unittest.TestCase):
+    def test_invalid_query_unsupported_directives(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                color @tag(tag_name: "color")
+                out_Animal_ParentOf {
+                  color @filter(op_name: "=", value: ["%color"])
+                        @output(out_name: "result")
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+        query_str = dedent('''\
+            {
+              Animal @fold {
+                color @output(out_name: "result")
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_ParentOf @recurse(depth: 1) {
+                  color @output(out_name: "result")
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+    def test_invalid_query_fails_builtin_validation(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  thing @output(out_name: "thing")
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+    def test_invalid_query_property_field_after_vertex_field(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_ParentOf {
+                  name @output(out_name: "name")
+                }
+                color @output(out_name: "color")
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
+
+        query_str = dedent('''\
+            {
+              Entity {
+                ... on Animal {
+                  color @output(out_name: "color")
+                }
+                name @output(out_name: "name")
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), basic_merged_schema)
