@@ -3,8 +3,7 @@ from collections import namedtuple
 from copy import copy
 
 from graphql.language import ast as ast_types
-from graphql.language.visitor import TypeInfoVisitor, Visitor, visit, REMOVE
-from graphql.type.definition import GraphQLList, GraphQLNonNull
+from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.utils.type_info import TypeInfo
 from graphql.validation import validate
 
@@ -202,16 +201,6 @@ def _split_query_ast_one_level_recursive(
     # Check if there is a split here. If so, split AST, make child query node, return property
     # field. If not, recurse on all child selections (if any)
     if isinstance(ast, ast_types.Field):
-        child_type = type_info.get_type()  # GraphQLType
-        if child_type is None:
-            raise SchemaStructureError(
-                u'The provided merged schema descriptor may be invalid. TypeInfo is unable '
-                u'to find the type that field "{}" is pointing to under type "{}".'.format(
-                    ast.name.value, type_info.get_parent_type()
-                )
-            )
-        child_type_name = strip_non_null_and_list_from_type(child_type).name
-
         parent_type_name = type_info.get_parent_type().name
         edge_field_name = ast.name.value
         if (parent_type_name, edge_field_name) in edge_to_stitch_fields:
@@ -387,7 +376,7 @@ def _get_property_field(selections, field_name, directives_from_edge):
             else:
                 raise AssertionError(
                     u'Unreachable code reached. Directive "{}" is of an unsupported type, and '
-                    u'was not caught in a prior validation step.'.format(new_directive)
+                    u'was not caught in a prior validation step.'.format(directive)
                 )
 
     return new_field
@@ -407,7 +396,7 @@ def _get_child_type_and_selections(ast, type_info):
         ast: type Node, the AST that, if split off into its own Document, would have the the
              type (named the same as the root vertex field) and root selections that this
              function outputs
-        type_info: TypeInfo, what is used to check for the type that 
+        type_info: TypeInfo, used to check for the type that fields lead to
 
     Returns:
         Tuple[str, List[Union[Field, InlineFragment]]], name and selections of the root

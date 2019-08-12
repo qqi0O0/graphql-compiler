@@ -3,12 +3,12 @@ from collections import namedtuple
 from textwrap import dedent
 import unittest
 
-from graphql import parse, print_ast, TypeInfo
+from graphql import parse, print_ast
 
 from ...exceptions import GraphQLValidationError
 from ...schema_transformation.split_query import split_query
 from .example_schema import (
-    basic_merged_schema, interface_merged_schema, union_merged_schema, three_merged_schema
+    basic_merged_schema, interface_merged_schema, three_merged_schema, union_merged_schema
 )
 
 
@@ -170,7 +170,7 @@ class TestSplitQuery(unittest.TestCase):
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         parent_ast = query_node.query_ast
         parent_root_selections = parent_ast.definitions[0].selection_set.selections[0].\
-                selection_set.selections
+            selection_set.selections
         self.assertEqual(len(parent_root_selections), 1)  # check None in second position removed
         print(query_node.query_ast)  # TODO
 
