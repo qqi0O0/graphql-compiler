@@ -6,6 +6,7 @@ from graphql import print_ast
 from graphql.language import ast as ast_types
 from graphql.language.visit import visit, Visitor
 
+from ..exceptions import GraphQLValidationError
 from .utils import try_get_ast
 
 
@@ -22,6 +23,7 @@ SubQueryPlan = namedtuple(
 OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
         'output_names',  # Tuple[str, str], (parent output name, child output name)
+        # 'is_optional',
         # May be expanded to have more attributes, describing how the join should be made
     )
 )
@@ -30,7 +32,7 @@ OutputJoinDescriptor = namedtuple(
 QueryPlanDescriptor = namedtuple(
     'QueryPlanDescriptor', (
         'root_sub_query_plan',  # SubQueryPlan
-        'intermediate_output_names',  # Set[str], names of outputs to be removed at the end
+        'intermediate_output_names',  # frozenset[str], names of outputs to be removed at the end
         'output_join_descriptors',
         # List[OutputJoinDescriptor], describing which outputs should be joined and how
     )
@@ -38,6 +40,7 @@ QueryPlanDescriptor = namedtuple(
 
 
 # NOTE: now this part only adds @filter directives, @output have been added
+# Change doc strings
 
 
 def make_query_plan(root_sub_query_node, intermediate_output_names):
@@ -69,89 +72,13 @@ def make_query_plan(root_sub_query_node, intermediate_output_names):
     output_join_descriptors = []
 
     root_sub_query_plan = SubQueryPlan(
-        query_ast=deepcopy(root_sub_query_node.query_ast),
+        query_ast=root_sub_query_node.query_ast,  # NOTE: careful about no modifications
         schema_id=root_sub_query_node.schema_id,
         parent_query_plan=None,
         child_query_plans=[],
     )
 
-    def _get_out_name_or_add_output_directive(field):
-        """Return out_name of @output on field, creating new @output if needed.
-
-        Args:
-            field: Field object, whose directives we may modify
-        """
-        # Check for existing directive
-        output_directive = try_get_ast(field.directives, u'output', ast_types.Directive)
-        if output_directive is None:
-            # Create and add new directive to field
-            out_name = _assign_and_return_output_name()
-            output_directive = _get_output_directive(out_name)
-            if field.directives is None:
-                field.directives = []
-            field.directives.append(output_directive)
-            return out_name
-        else:
-            return output_directive.arguments[0].value.value  # Location of value of out_name
-
-    def _make_query_plan_helper(sub_query_node, sub_query_plan):
-        """Recursively copy the structure of sub_query_node onto sub_query_plan.
-
-        For each child connection contained in sub_query_node, create a new SubQueryPlan for
-        the corresponding child SubQueryNode, add appropriate @output and @filter directives
-        to the parent and child ASTs, and attach the new SubQueryPlan to the list of children
-        of the input sub query plan.
-
-        Args:
-            sub_query_node: SubQueryNode, whose descendents are copied over onto sub_query_plan.
-                            It is not modified by this function
-            sub_query_plan: SubQueryPlan, whose list of child query plans and query AST are
-                            modified
-        """
-        parent_query_ast = sub_query_plan.query_ast  # Can modify and add directives directly
-
-        # Iterate through child connections of query node
-        for child_query_connection in sub_query_node.child_query_connections:
-            child_sub_query_node = child_query_connection.sink_query_node
-            child_query_ast = deepcopy(child_sub_query_node.query_ast)  # Prevent modifying input
-
-            parent_field = _get_node_by_path(
-                parent_query_ast, child_query_connection.source_field_path
-            )
-            child_field = _get_node_by_path(
-                child_query_ast, child_query_connection.sink_field_path
-            )
-
-            # Get existing @output or add new to parent and child
-            parent_out_name = _get_out_name_or_add_output_directive(parent_field)
-            child_out_name = _get_out_name_or_add_output_directive(child_field)
-
-            # Add @filter to child
-            # Local variable in @filter will be named the same as the parent output
-            child_filter_directive = _get_in_collection_filter_directive(parent_out_name)
-            child_field.directives.append(child_filter_directive)
-
-            # Create new SubQueryPlan for child
-            child_sub_query_plan = SubQueryPlan(
-                query_ast=child_query_ast,
-                schema_id=child_sub_query_node.schema_id,
-                parent_query_plan=sub_query_plan,
-                child_query_plans=[],
-            )
-
-            # Add new SubQueryPlan to parent's child list
-            sub_query_plan.child_query_plans.append(child_sub_query_plan)
-
-            # Add information about this edge
-            new_output_join_descriptor = OutputJoinDescriptor(
-                output_names=(parent_out_name, child_out_name),
-            )
-            output_join_descriptors.append(new_output_join_descriptor)
-
-            # Recursively repeat on child SubQueryPlans
-            _make_query_plan_helper(child_sub_query_node, child_sub_query_plan)
-
-    _make_query_plan_helper(root_sub_query_node, root_sub_query_plan)
+    _make_query_plan_recursive(root_sub_query_node, root_sub_query_plan)
 
     return QueryPlanDescriptor(
         root_sub_query_plan=root_sub_query_plan,
@@ -160,28 +87,121 @@ def make_query_plan(root_sub_query_node, intermediate_output_names):
     )
 
 
-def _get_field_with_out_name(ast, out_name):
-    pass
+def _make_query_plan_recursive(sub_query_node, sub_query_plan):
+    """Recursively copy the structure of sub_query_node onto sub_query_plan.
+
+    For each child connection contained in sub_query_node, create a new SubQueryPlan for
+    the corresponding child SubQueryNode, add appropriate @filter directive to the child AST,
+    and attach the new SubQueryPlan to the list of children of the input sub query plan.
+
+    Args:
+        sub_query_node: SubQueryNode, whose descendents are copied over onto sub_query_plan.
+                        It is not modified by this function
+        sub_query_plan: SubQueryPlan, whose list of child query plans and query AST are
+                        modified
+    """
+    parent_query_ast = sub_query_plan.query_ast  # Can modify and add directives directly
+
+    # Iterate through child connections of query node
+    for child_query_connection in sub_query_node.child_query_connections:
+        child_sub_query_node = child_query_connection.sink_query_node
+        parent_out_name = child_query_connection.source_field_out_name
+        child_out_name = child_query_connection.sink_field_out_name
+
+        child_query_ast = child_sub_query_node.query_ast
+        child_query_ast_with_filter = _add_filter_at_field_with_output(
+            child_query_ast, child_out_name, parent_out_name
+            # @filter's local variable is named the same as the out_name of the parent's @output
+        )
+        if child_query_ast is child_query_ast_with_filter:
+            raise AssertionError(
+                u'An @output directive with out_name "{}" is unexpectedly not found in the '
+                u'AST "{}".'.format(child_out_name, child_query_ast)
+            )
+
+        # Create new SubQueryPlan for child
+        child_sub_query_plan = SubQueryPlan(
+            query_ast=child_query_ast_with_filter,
+            schema_id=child_sub_query_node.schema_id,
+            parent_query_plan=sub_query_plan,
+            child_query_plans=[],
+        )
+
+        # Add new SubQueryPlan to parent's child list
+        sub_query_plan.child_query_plans.append(child_sub_query_plan)
+
+        # Add information about this edge
+        new_output_join_descriptor = OutputJoinDescriptor(
+            output_names=(parent_out_name, child_out_name),
+        )
+        output_join_descriptors.append(new_output_join_descriptor)
+
+        # Recursively repeat on child SubQueryPlans
+        _make_query_plan_helper(child_sub_query_node, child_sub_query_plan)
 
 
-class GetFieldWithOutNameVisitor(Visitor):
-    def __init__(self, out_name):
-        self.out_name = out_name
-        self.field_with_out_name = None
+def _add_filter_at_field_with_output(ast, field_out_name, input_filter_name):
+    """Return an AST with @filter added at the field with the specified @output, if found.
 
-    def enter_Field(self, node, *args):
-        if node.directives is not None:
-            for directive in node.directives:
-                if (
-                    directive.name.value == u'output' and
-                    directive.arguments[0].value.value == self.out_name
-                ):  # Found output directive with desired out_name
-                    if self.field_with_out_name is None:
-                        self.field_with_out_name = node
-                    else:
-                        raise AssertionError(
-                            u'There are two output directives with the same out_name.'
-                        )
+    Input ast not modified.
+
+    If not edited, return the exact input ast object.
+    """
+    if not isinstance(ast, (
+        ast_types.Field, ast_types.InlineFragment, ast_types.OperationDefinition
+    )):
+        return ast
+
+    if isinstance(ast, ast_types.Field):
+        # Check whether this field has the expected directive, if so, modify and return
+        if (
+            ast.directives is not None and
+            any(
+                _is_output_directive_with_name(directive, field_out_name)
+                for directive in ast.directives
+            )
+        ):
+            new_directives = copy(ast.directives)
+            new_directives.append(_get_in_collection_filter_directive(input_filter_name))
+            new_ast = copy(ast)
+            new_ast.directives = new_directives
+            return new_ast
+
+    if ast.selection_set is None:  # Nothing to recurse on
+        return ast
+
+    # Otherwise, recurse and look for field with name
+    made_changes = False
+    new_selections = []
+    for selection in ast.selection_set.selections:
+        new_selection = _add_filter_at_field_with_output(
+            selection, field_out_name, input_filter_name
+        )
+        if new_selection is not selection:  # Changes made somewhere down the line
+            if not made_changes:
+                made_changes = True
+            else:
+                # Change has already been made, but there is a new change. Implies that multiple
+                # fields have the @output directive with the desired name
+                raise GraphQLValidationError(
+                    u'There are multiple @output directives with the out_name "{}"'.format(
+                        field_out_name
+                    )
+                )
+        new_selections.append(new_selection)
+
+    if made_changes:
+        new_ast = copy(ast)
+        new_ast.selection_set = ast_types.SelectionSet(selections=new_selections)
+        return new_ast
+    else:
+        return ast
+
+
+def _is_output_directive_with_name(directive, out_name):
+    if not isinstance(directive, ast_types.Directive):
+        raise AssertionError(u'Input "{}" is not a directive.'.format(directive))
+    return directive.name.value == u'output' and directive.arguments[0].value.value == out_name
 
 
 def _get_in_collection_filter_directive(input_filter_name):
