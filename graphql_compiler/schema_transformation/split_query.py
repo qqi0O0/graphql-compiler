@@ -41,11 +41,14 @@ class SubQueryNode(object):
 
 
 class IntermediateOutNameAssigner(object):
+    """Used to generate and keep track of out_name of @output directives."""
     def __init__(self):
+        """Create assigner with empty records."""
         self.intermediate_output_names = set()
         self.intermediate_output_count = 0
 
     def assign_and_return_out_name(self):
+        """Assign and return name, increment count, add name to records."""
         out_name = '__intermediate_output_' + str(self.intermediate_output_count)
         self.intermediate_output_count += 1
         self.intermediate_output_names.add(out_name)
