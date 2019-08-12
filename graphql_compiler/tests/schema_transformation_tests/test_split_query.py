@@ -968,7 +968,7 @@ class TestSplitQueryInvalidQuery(unittest.TestCase):
         with self.assertRaises(GraphQLValidationError):
             split_query(parse(query_str), basic_merged_schema)
 
-    def test_invalid_query_property_field_after_vertex_field(self):
+    def test_invalid_query_wrong_field_order(self):
         query_str = dedent('''\
             {
               Animal {
