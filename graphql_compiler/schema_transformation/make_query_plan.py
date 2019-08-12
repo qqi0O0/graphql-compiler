@@ -4,6 +4,7 @@ from copy import deepcopy
 
 from graphql import print_ast
 from graphql.language import ast as ast_types
+from graphql.language.visit import visit, Visitor
 
 from .utils import try_get_ast
 
@@ -21,7 +22,7 @@ SubQueryPlan = namedtuple(
 OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
         'output_names',  # Tuple[str, str], (parent output name, child output name)
-        # 'is_optional',  # boolean, if the parent has an @optional requiring an outer join
+        # May be expanded to have more attributes, describing how the join should be made
     )
 )
 
@@ -36,7 +37,10 @@ QueryPlanDescriptor = namedtuple(
 )
 
 
-def make_query_plan(root_sub_query_node):
+# NOTE: now this part only adds @filter directives, @output have been added
+
+
+def make_query_plan(root_sub_query_node, intermediate_output_names):
     """Return a QueryPlanDescriptor, whose query ASTs have @filter and @output directives added.
 
     For each stitch, if the property field in the parent used in the stitch does not already
@@ -62,9 +66,7 @@ def make_query_plan(root_sub_query_node):
     # defined a variable with the same name.
 
     # The following variables are modified by the helper functions defined inside
-    intermediate_output_names = set()
     output_join_descriptors = []
-    _output_count = [0]  # Workaround for lack of nonlocal in python 2
 
     root_sub_query_plan = SubQueryPlan(
         query_ast=deepcopy(root_sub_query_node.query_ast),
@@ -72,13 +74,6 @@ def make_query_plan(root_sub_query_node):
         parent_query_plan=None,
         child_query_plans=[],
     )
-
-    def _assign_and_return_output_name():
-        """Create intermediate name, increment count, add to record of intermediate outputs."""
-        output_name = u'__intermediate_output_' + str(_output_count[0])
-        _output_count[0] += 1
-        intermediate_output_names.add(output_name)
-        return output_name
 
     def _get_out_name_or_add_output_directive(field):
         """Return out_name of @output on field, creating new @output if needed.
@@ -165,16 +160,28 @@ def make_query_plan(root_sub_query_node):
     )
 
 
-def _get_output_directive(out_name):
-    return ast_types.Directive(
-        name=ast_types.Name(value=u'output'),
-        arguments=[
-            ast_types.Argument(
-                name=ast_types.Name(value=u'out_name'),
-                value=ast_types.StringValue(value=out_name),
-            ),
-        ],
-    )
+def _get_field_with_out_name(ast, out_name):
+    pass
+
+
+class GetFieldWithOutNameVisitor(Visitor):
+    def __init__(self, out_name):
+        self.out_name = out_name
+        self.field_with_out_name = None
+
+    def enter_Field(self, node, *args):
+        if node.directives is not None:
+            for directive in node.directives:
+                if (
+                    directive.name.value == u'output' and
+                    directive.arguments[0].value.value == self.out_name
+                ):  # Found output directive with desired out_name
+                    if self.field_with_out_name is None:
+                        self.field_with_out_name = node
+                    else:
+                        raise AssertionError(
+                            u'There are two output directives with the same out_name.'
+                        )
 
 
 def _get_in_collection_filter_directive(input_filter_name):
@@ -195,48 +202,6 @@ def _get_in_collection_filter_directive(input_filter_name):
             ),
         ],
     )
-
-
-def _get_node_by_path(ast, path):
-    """Return the Node object in the input AST pointed to by the input path.
-
-    Args:
-        ast: Node
-        path: List[Union[int, str]], the list of attribute names (if str) or list indices (if
-              int) used to access a node in the input AST.
-    """
-    target_node = ast
-    for key in path:
-        # If both AST and path are produced normally by split_query, the below errors will only
-        # occur due to programming bugs.
-        if isinstance(key, str):
-            try:
-                target_node = getattr(target_node, key)
-            except AttributeError:
-                raise AssertionError(
-                    u'The path {} cannot be used to index into AST {}. The attribute {} '
-                    u'cannot be found in AST node {}.'.format(path, ast, key, target_node)
-                )
-        elif isinstance(key, int):
-            if not isinstance(target_node, list):
-                raise AssertionError(
-                    u'The path {} cannot be used to index into AST {}. The key {} is a list '
-                    u'index, but the corresponding component {} is not a list.'
-                    u''.format(path, ast, key, target_node)
-                )
-            try:
-                target_node = target_node[key]
-            except IndexError:
-                raise AssertionError(
-                    u'The path {} cannot be used to index into AST {}. The key {} is out of '
-                    u'range for {}.'.format(path, ast, key, target_node)
-                )
-        else:
-            raise AssertionError(
-                u'The path {} used for accessing a particular node in an AST should only '
-                u'contain int and str elements.'.format(path)
-            )
-    return target_node
 
 
 def print_query_plan(query_plan_descriptor):
