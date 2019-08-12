@@ -40,21 +40,6 @@ class SubQueryNode(object):
         # List[SubQueryNode], the queries that depend on the current query
 
 
-class IntermediateOutNameAssigner(object):
-    """Used to generate and keep track of out_name of @output directives."""
-    def __init__(self):
-        """Create assigner with empty records."""
-        self.intermediate_output_names = set()
-        self.intermediate_output_count = 0
-
-    def assign_and_return_out_name(self):
-        """Assign and return name, increment count, add name to records."""
-        out_name = '__intermediate_output_' + str(self.intermediate_output_count)
-        self.intermediate_output_count += 1
-        self.intermediate_output_names.add(out_name)
-        return out_name
-
-
 def split_query(query_ast, merged_schema_descriptor):
     """Split input query AST into a tree of SubQueryNodes targeting each individual schema.
 
@@ -451,64 +436,6 @@ def _get_child_type_and_selections(ast, type_info):
     return child_type_name, child_selection_set.selections
 
 
-def _check_query_is_valid_to_split(schema, query_ast):
-    """Check the query is valid for splitting.
-
-    In particular, ensure that the query validates against the schema, does not contain
-    unsupported directives, and that in each selection, all property fields occur before all
-    vertex fields.
-
-    Args:
-        schema: GraphQLSchema object
-        query_ast: Document
-
-    Raises:
-        GraphQLValidationError if the query doesn't validate against the schema, contains
-        unsupported directives, or some property field occurs after a vertex field in some
-        selection
-    """
-    # Check builtin errors
-    built_in_validation_errors = validate(schema, query_ast)
-    if len(built_in_validation_errors) > 0:
-        raise GraphQLValidationError(
-            u'AST does not validate: {}'.format(built_in_validation_errors)
-        )
-    # Check no bad directives and fields are in order
-    visitor = CheckQueryIsValidToSplit()
-    visit(query_ast, visitor)
-
-
-class CheckQueryIsValidToSplit(Visitor):
-    """Check the query only has supported directives, and its fields are correctly ordered."""
-    # This is very restrictive for now. Other cases (e.g. tags not crossing boundaries) are
-    # also ok, but temporarily not allowed
-    supported_directives = frozenset(('filter', 'output', 'optional', 'stitch'))
-
-    def enter_Directive(self, node, *args):
-        """Check that the directive is supported."""
-        if node.name.value not in self.supported_directives:
-            raise GraphQLValidationError(
-                u'Directive "{}" is not yet supported, only "{}" are currently '
-                u'supported.'.format(node.name.value, self.supported_directives)
-            )
-
-    def enter_SelectionSet(self, node, *args):
-        """Check property fields occur before vertex fields and type coercions in selection."""
-        past_property_fields = False  # Whether we're seen a vertex field
-        for field in node.selections:
-            if _is_property_field(field):
-                if past_property_fields:
-                    raise GraphQLValidationError(
-                        u'In the selections {}, the property field {} occurs after a vertex '
-                        u'field or a type coercion statement, which is not allowed, as all '
-                        u'property fields must appear before all vertex fields.'.format(
-                            node.selections, field
-                        )
-                    )
-            else:
-                past_property_fields = True
-
-
 def _is_property_field(selection):
     """Return True if selection is a property field, False if a vertex field or type coercion.
 
@@ -683,6 +610,79 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
         return out_name
     else:
         return output_directive.arguments[0].value.value  # Location of value of out_name
+
+
+class IntermediateOutNameAssigner(object):
+    """Used to generate and keep track of out_name of @output directives."""
+    def __init__(self):
+        """Create assigner with empty records."""
+        self.intermediate_output_names = set()
+        self.intermediate_output_count = 0
+
+    def assign_and_return_out_name(self):
+        """Assign and return name, increment count, add name to records."""
+        out_name = '__intermediate_output_' + str(self.intermediate_output_count)
+        self.intermediate_output_count += 1
+        self.intermediate_output_names.add(out_name)
+        return out_name
+
+
+def _check_query_is_valid_to_split(schema, query_ast):
+    """Check the query is valid for splitting.
+
+    In particular, ensure that the query validates against the schema, does not contain
+    unsupported directives, and that in each selection, all property fields occur before all
+    vertex fields.
+
+    Args:
+        schema: GraphQLSchema object
+        query_ast: Document
+
+    Raises:
+        GraphQLValidationError if the query doesn't validate against the schema, contains
+        unsupported directives, or some property field occurs after a vertex field in some
+        selection
+    """
+    # Check builtin errors
+    built_in_validation_errors = validate(schema, query_ast)
+    if len(built_in_validation_errors) > 0:
+        raise GraphQLValidationError(
+            u'AST does not validate: {}'.format(built_in_validation_errors)
+        )
+    # Check no bad directives and fields are in order
+    visitor = CheckQueryIsValidToSplitVisitor()
+    visit(query_ast, visitor)
+
+
+class CheckQueryIsValidToSplitVisitor(Visitor):
+    """Check the query only has supported directives, and its fields are correctly ordered."""
+    # This is very restrictive for now. Other cases (e.g. tags not crossing boundaries) are
+    # also ok, but temporarily not allowed
+    supported_directives = frozenset(('filter', 'output', 'optional', 'stitch'))
+
+    def enter_Directive(self, node, *args):
+        """Check that the directive is supported."""
+        if node.name.value not in self.supported_directives:
+            raise GraphQLValidationError(
+                u'Directive "{}" is not yet supported, only "{}" are currently '
+                u'supported.'.format(node.name.value, self.supported_directives)
+            )
+
+    def enter_SelectionSet(self, node, *args):
+        """Check property fields occur before vertex fields and type coercions in selection."""
+        past_property_fields = False  # Whether we're seen a vertex field
+        for field in node.selections:
+            if _is_property_field(field):
+                if past_property_fields:
+                    raise GraphQLValidationError(
+                        u'In the selections {}, the property field {} occurs after a vertex '
+                        u'field or a type coercion statement, which is not allowed, as all '
+                        u'property fields must appear before all vertex fields.'.format(
+                            node.selections, field
+                        )
+                    )
+            else:
+                past_property_fields = True
 
 
 class SchemaIdSetterVisitor(Visitor):
