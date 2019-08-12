@@ -112,6 +112,20 @@ class TestSplitQuery(unittest.TestCase):
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
 
+    def test_original_unmodified(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  age @output(out_name: "age")
+                }
+              }
+            }
+        ''')
+        query_ast = parse(query_str)
+        split_query(query_ast, basic_merged_schema)
+        self.assertEqual(print_ast(query_ast), (query_str))
+
     def test_existing_output_field_in_parent(self):
         query_str = dedent('''\
             {
