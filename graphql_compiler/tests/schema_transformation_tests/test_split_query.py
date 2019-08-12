@@ -26,10 +26,12 @@ ExampleQueryNode = namedtuple(
 
 class TestSplitQuery(unittest.TestCase):
     def _check_query_node_structure(self, root_query_node, root_example_query_node):
+        """Check root_query_node has no parent and has the same structure as the example input."""
         self.assertIs(root_query_node.parent_query_connection, None)
         self._check_query_node_structure_helper(root_query_node, root_example_query_node)
 
     def _check_query_node_structure_helper(self, query_node, example_query_node):
+        """Check query_node has the same structure as example_query_node."""
         # Check AST and id of the parent
         self.assertEqual(print_ast(query_node.query_ast), example_query_node.query_str)
         self.assertEqual(query_node.schema_id, example_query_node.schema_id)
@@ -49,7 +51,7 @@ class TestSplitQuery(unittest.TestCase):
 
     def _check_query_node_edge(self, parent_query_node, parent_to_child_edge_index,
                                child_query_node, parent_out_name, child_out_name):
-        """Check the edge between parent and child is symmetric, with the right output namess."""
+        """Check the edge between parent and child is symmetric, with the right output names."""
         parent_to_child_connection = \
             parent_query_node.child_query_connections[parent_to_child_edge_index]
         child_to_parent_connection = child_query_node.parent_query_connection
@@ -61,12 +63,9 @@ class TestSplitQuery(unittest.TestCase):
         self.assertEqual(parent_to_child_connection.sink_field_out_name, child_out_name)
         self.assertEqual(child_to_parent_connection.source_field_out_name, child_out_name)
 
-    # TODO: make these queries all legal with @output and such
+    # TODO:
     # test for bad property and vertex field order
-    # test for edge cut off, new property field added NOT in place
-    # type coercion in different places
     # Test like where the Cat type didn't have a corresponding root field
-    # original unmodified?
 
     def test_no_existing_fields_split(self):
         query_str = dedent('''\
@@ -124,7 +123,7 @@ class TestSplitQuery(unittest.TestCase):
         ''')
         query_ast = parse(query_str)
         split_query(query_ast, basic_merged_schema)
-        self.assertEqual(print_ast(query_ast), (query_str))
+        self.assertEqual(query_ast, parse(query_str))
 
     def test_existing_output_field_in_parent(self):
         query_str = dedent('''\
@@ -462,7 +461,7 @@ class TestSplitQuery(unittest.TestCase):
             {
               Animal {
                 out_Animal_Creature {
-                  thing
+                  thing @output(out_name: "thing")
                 }
               }
             }
@@ -474,7 +473,7 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Entity {
-                uuid
+                name @output(out_name: "name")
                 ... on Animal {
                   out_Animal_Creature {
                     age @output(out_name: "age")
@@ -486,7 +485,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Entity {
-                uuid
+                name @output(out_name: "name")
                 ... on Animal {
                   uuid @output(out_name: "__intermediate_output_0")
                 }
@@ -677,6 +676,187 @@ class TestSplitQuery(unittest.TestCase):
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
 
+    def test_cross_schema_edge_field_after_normal_vertex_field(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_ParentOf {
+                  color @output(out_name: "color")
+                }
+                out_Animal_Creature {
+                  age @output(out_name: "age")
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Animal {
+                uuid @output(out_name: "__intermediate_output_0")
+                out_Animal_ParentOf {
+                  color @output(out_name: "color")
+                }
+              }
+            }
+        ''')
+        child_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                id @output(out_name: "__intermediate_output_1")
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_out_names=[
+                (
+                    ExampleQueryNode(
+                        query_str=child_str,
+                        schema_id='second',
+                        child_query_nodes_and_out_names=[]
+                    ),
+                    '__intermediate_output_0',
+                    '__intermediate_output_1',
+                )
+            ]
+        )
+        query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+
+    def test_two_edges_on_same_field_in_V(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                name
+                out_Animal_Creature {
+                  age @output(out_name: "age")
+                }
+                out_Animal_Critter {
+                  size @output(out_name: "size")
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Animal {
+                name
+                uuid @output(out_name: "__intermediate_output_0")
+              }
+            }
+        ''')
+        child1_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                id @output(out_name: "__intermediate_output_1")
+              }
+            }
+        ''')
+        child2_str = dedent('''\
+            {
+              Critter {
+                size @output(out_name: "size")
+                ID @output(out_name: "__intermediate_output_2")
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='first',
+            child_query_nodes_and_out_names=[
+                (
+                    ExampleQueryNode(
+                        query_str=child1_str,
+                        schema_id='second',
+                        child_query_nodes_and_out_names=[]
+                    ),
+                    '__intermediate_output_0',
+                    '__intermediate_output_1',
+                ),
+                (
+                    ExampleQueryNode(
+                        query_str=child2_str,
+                        schema_id='third',
+                        child_query_nodes_and_out_names=[]
+                    ),
+                    '__intermediate_output_0',
+                    '__intermediate_output_2',
+                )
+            ]
+        )
+        query_node, intermediate_outputs = split_query(parse(query_str), three_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+
+    def test_two_edges_on_same_field_in_chain(self):
+        query_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                in_Animal_Creature {
+                  name @output(out_name: "name")
+                  out_Animal_Critter {
+                    size @output(out_name: "size")
+                  }
+                }
+              }
+            }
+        ''')
+        parent_str = dedent('''\
+            {
+              Creature {
+                age @output(out_name: "age")
+                id @output(out_name: "__intermediate_output_0")
+              }
+            }
+        ''')
+        child1_str = dedent('''\
+            {
+              Animal {
+                name @output(out_name: "name")
+                uuid @output(out_name: "__intermediate_output_1")
+              }
+            }
+        ''')
+
+        child2_str = dedent('''\
+            {
+              Critter {
+                size @output(out_name: "size")
+                ID @output(out_name: "__intermediate_output_2")
+              }
+            }
+        ''')
+        example_query_node = ExampleQueryNode(
+            query_str=parent_str,
+            schema_id='second',
+            child_query_nodes_and_out_names=[
+                (
+                    ExampleQueryNode(
+                        query_str=child1_str,
+                        schema_id='first',
+                        child_query_nodes_and_out_names=[
+                            (
+                                ExampleQueryNode(
+                                    query_str=child2_str,
+                                    schema_id='third',
+                                    child_query_nodes_and_out_names=[]
+                                ),
+                                '__intermediate_output_1',
+                                '__intermediate_output_2',
+                            )
+                        ]
+                    ),
+                    '__intermediate_output_0',
+                    '__intermediate_output_1',
+                ),
+            ]
+        )
+        query_node, intermediate_outputs = split_query(parse(query_str), three_merged_schema)
+        self._check_query_node_structure(query_node, example_query_node)
+
     def test_complex_query_structure(self):
         query_str = dedent('''\
             {
@@ -767,186 +947,3 @@ class TestSplitQuery(unittest.TestCase):
         )
         query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
-
-    def test_cross_schema_edge_field_after_normal_vertex_field(self):
-        query_str = dedent('''\
-            {
-              Animal {
-                out_Animal_ParentOf {
-                  color @output(out_name: "color")
-                }
-                out_Animal_Creature {
-                  age
-                }
-              }
-            }
-        ''')
-        parent_str = dedent('''\
-            {
-              Animal {
-                uuid @output(out_name: "__intermediate_output_0")
-                out_Animal_ParentOf {
-                  color @output(out_name: "color")
-                }
-              }
-            }
-        ''')
-        child_str = dedent('''\
-            {
-              Creature {
-                age
-                id @output(out_name: "__intermediate_output_1")
-              }
-            }
-        ''')
-        example_query_node = ExampleQueryNode(
-            query_str=parent_str,
-            schema_id='first',
-            child_query_nodes_and_out_names=[
-                (
-                    ExampleQueryNode(
-                        query_str=child_str,
-                        schema_id='second',
-                        child_query_nodes_and_out_names=[]
-                    ),
-                    '__intermediate_output_0',
-                    '__intermediate_output_1',
-                )
-            ]
-        )
-        query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
-        self._check_query_node_structure(query_node, example_query_node)
-
-    def test_two_edges_on_same_field_in_V(self):
-        query_str = dedent('''\
-            {
-              Animal {
-                name
-                out_Animal_Creature {
-                  age
-                }
-                out_Animal_Critter {
-                  size
-                }
-              }
-            }
-        ''')
-        parent_str = dedent('''\
-            {
-              Animal {
-                name
-                uuid @output(out_name: "__intermediate_output_0")
-              }
-            }
-        ''')
-        child1_str = dedent('''\
-            {
-              Creature {
-                age
-                id @output(out_name: "__intermediate_output_1")
-              }
-            }
-        ''')
-        child2_str = dedent('''\
-            {
-              Critter {
-                size
-                ID @output(out_name: "__intermediate_output_2")
-              }
-            }
-        ''')
-        example_query_node = ExampleQueryNode(
-            query_str=parent_str,
-            schema_id='first',
-            child_query_nodes_and_out_names=[
-                (
-                    ExampleQueryNode(
-                        query_str=child1_str,
-                        schema_id='second',
-                        child_query_nodes_and_out_names=[]
-                    ),
-                    '__intermediate_output_0',
-                    '__intermediate_output_1',
-                ),
-                (
-                    ExampleQueryNode(
-                        query_str=child2_str,
-                        schema_id='third',
-                        child_query_nodes_and_out_names=[]
-                    ),
-                    '__intermediate_output_0',
-                    '__intermediate_output_2',
-                )
-            ]
-        )
-        query_node, intermediate_outputs = split_query(parse(query_str), three_merged_schema)
-        self._check_query_node_structure(query_node, example_query_node)
-
-    def test_two_edges_on_same_field_in_chain(self):
-        query_str = dedent('''\
-            {
-              Creature {
-                age
-                in_Animal_Creature {
-                  name
-                  out_Animal_Critter {
-                    size
-                  }
-                }
-              }
-            }
-        ''')
-        parent_str = dedent('''\
-            {
-              Creature {
-                age
-                id @output(out_name: "__intermediate_output_0")
-              }
-            }
-        ''')
-        child1_str = dedent('''\
-            {
-              Animal {
-                name
-                uuid @output(out_name: "__intermediate_output_1")
-              }
-            }
-        ''')
-
-        child2_str = dedent('''\
-            {
-              Critter {
-                size
-                ID @output(out_name: "__intermediate_output_2")
-              }
-            }
-        ''')
-        example_query_node = ExampleQueryNode(
-            query_str=parent_str,
-            schema_id='second',
-            child_query_nodes_and_out_names=[
-                (
-                    ExampleQueryNode(
-                        query_str=child1_str,
-                        schema_id='first',
-                        child_query_nodes_and_out_names=[
-                            (
-                                ExampleQueryNode(
-                                    query_str=child2_str,
-                                    schema_id='third',
-                                    child_query_nodes_and_out_names=[]
-                                ),
-                                '__intermediate_output_1',
-                                '__intermediate_output_2',
-                            )
-                        ]
-                    ),
-                    '__intermediate_output_0',
-                    '__intermediate_output_1',
-                ),
-            ]
-        )
-        query_node, intermediate_outputs = split_query(parse(query_str), three_merged_schema)
-        self._check_query_node_structure(query_node, example_query_node)
-
-    # TODO: back and forth on an edge
