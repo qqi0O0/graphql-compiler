@@ -3,10 +3,10 @@ from collections import namedtuple
 from textwrap import dedent
 import unittest
 
-from graphql import parse, print_ast
+from graphql import parse, print_ast, TypeInfo
 
 from ...exceptions import GraphQLValidationError
-from ...schema_transformation.split_query import split_query
+from ...schema_transformation.split_query import split_query, _get_edge_to_stitch_fields, IntermediateOutNameAssigner, SubQueryNode, _split_query_one_level
 from .example_schema import (
     basic_merged_schema, interface_merged_schema, union_merged_schema, three_merged_schema
 )
@@ -17,18 +17,11 @@ ExampleQueryNode = namedtuple(
     'ExampleQueryNode', (
         'query_str',
         'schema_id',
-        'child_query_nodes_and_paths',
-        # List[Tuple[ExampleQueryNode, List[Union[int, str]], List[Union[int, str]]]]
-        # child example query node, parent field path, child field path
+        'child_query_nodes_and_out_names',
+        # List[Tuple[ExampleQueryNode, str, str]]
+        # child example query node, parent out name, child out name
     )
 )
-
-
-# The path that all field paths share in common. This path reaches the list of root selections
-# of the query
-BASE_FIELD_PATH = [
-    'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections'
-]
 
 
 class TestSplitQuery(unittest.TestCase):
@@ -42,31 +35,31 @@ class TestSplitQuery(unittest.TestCase):
         self.assertEqual(query_node.schema_id, example_query_node.schema_id)
         # Check number of children matches
         self.assertEqual(len(query_node.child_query_connections),
-                         len(example_query_node.child_query_nodes_and_paths))
+                         len(example_query_node.child_query_nodes_and_out_names))
         for i in range(len(query_node.child_query_connections)):
             # Check child and parent connections
             child_query_connection = query_node.child_query_connections[i]
             child_query_node = child_query_connection.sink_query_node
-            child_example_query_node, parent_field_path, child_field_path = \
-                example_query_node.child_query_nodes_and_paths[i]
-            self._check_query_node_edge(query_node, i, child_query_node, parent_field_path,
-                                        child_field_path)
+            child_example_query_node, parent_out_name, child_out_name = \
+                example_query_node.child_query_nodes_and_out_names[i]
+            self._check_query_node_edge(query_node, i, child_query_node, parent_out_name,
+                                        child_out_name)
             # Recurse
             self._check_query_node_structure_helper(child_query_node, child_example_query_node)
 
     def _check_query_node_edge(self, parent_query_node, parent_to_child_edge_index,
-                               child_query_node, parent_field_path, child_field_path):
-        """Check the edge between parent and child is symmetric, with the right paths."""
+                               child_query_node, parent_out_name, child_out_name):
+        """Check the edge between parent and child is symmetric, with the right output namess."""
         parent_to_child_connection = \
             parent_query_node.child_query_connections[parent_to_child_edge_index]
         child_to_parent_connection = child_query_node.parent_query_connection
 
         self.assertIs(parent_to_child_connection.sink_query_node, child_query_node)
         self.assertIs(child_to_parent_connection.sink_query_node, parent_query_node)
-        self.assertEqual(parent_to_child_connection.source_field_path, parent_field_path)
-        self.assertEqual(child_to_parent_connection.sink_field_path, parent_field_path)
-        self.assertEqual(parent_to_child_connection.sink_field_path, child_field_path)
-        self.assertEqual(child_to_parent_connection.source_field_path, child_field_path)
+        self.assertEqual(parent_to_child_connection.source_field_out_name, parent_out_name)
+        self.assertEqual(child_to_parent_connection.sink_field_out_name, parent_out_name)
+        self.assertEqual(parent_to_child_connection.sink_field_out_name, child_out_name)
+        self.assertEqual(child_to_parent_connection.source_field_out_name, child_out_name)
 
     # TODO: make these queries all legal with @output and such
     # test for bad property and vertex field order
@@ -74,6 +67,30 @@ class TestSplitQuery(unittest.TestCase):
     # type coercion in different places
     # Test like where the Cat type didn't have a corresponding root field
     # original unmodified?
+
+    def test_split_one_level(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  age
+                }
+              }
+            }
+        ''')
+        type_info = TypeInfo(basic_merged_schema.schema)
+        edge_to_stitch_fields = _get_edge_to_stitch_fields(basic_merged_schema)
+        intermediate_out_name_assigner = IntermediateOutNameAssigner()
+        query_node = SubQueryNode(parse(query_str))
+        _split_query_one_level(query_node, basic_merged_schema, edge_to_stitch_fields,
+                               intermediate_out_name_assigner)
+        print((query_node.query_ast))
+        print(print_ast(query_node.query_ast))
+        print(query_node.schema_id)
+        print(query_node.child_query_connections)
+        child_query_node = query_node.child_query_connections[0].sink_query_node
+        print(print_ast(child_query_node.query_ast))
+        print(child_query_node.schema_id)
 
     def test_no_existing_fields_split(self):
         query_str = dedent('''\
@@ -88,7 +105,7 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                uuid
+                uuid @output(out_name: "__intermediate_output_0")
               }
             }
         ''')
@@ -96,26 +113,26 @@ class TestSplitQuery(unittest.TestCase):
             {
               Creature {
                 age
-                id
+                id @output(out_name: "__intermediate_output_1")
               }
             }
         ''')
         example_query_node = ExampleQueryNode(
             query_str=parent_str,
             schema_id='first',
-            child_query_nodes_and_paths=[
+            child_query_nodes_and_out_names=[
                 (
                     ExampleQueryNode(
                         query_str=child_str,
                         schema_id='second',
-                        child_query_nodes_and_paths=[]
+                        child_query_nodes_and_out_names=[]
                     ),
-                    BASE_FIELD_PATH + [0],
-                    BASE_FIELD_PATH + [1],
+                    '__intermediate_output_0',
+                    '__intermediate_output_1',
                 )
             ]
         )
-        query_node = split_query(parse(query_str), basic_merged_schema)
+        query_node, intermediate_outputs = split_query(parse(query_str), basic_merged_schema)
         self._check_query_node_structure(query_node, example_query_node)
 
     def test_existing_output_field_in_parent(self):

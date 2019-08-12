@@ -2,7 +2,6 @@
 from collections import namedtuple
 from copy import copy, deepcopy
 
-from graphql import print_ast
 from graphql.language import ast as ast_types
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit, REMOVE
 from graphql.type.definition import GraphQLList, GraphQLNonNull
@@ -10,6 +9,7 @@ from graphql.utils.type_info import TypeInfo
 from graphql.validation import validate
 
 from ..ast_manipulation import get_only_query_definition
+from ..compiler.helpers import strip_non_null_and_list_from_type
 from ..exceptions import GraphQLValidationError
 from .utils import SchemaStructureError, try_get_ast
 
@@ -17,9 +17,9 @@ from .utils import SchemaStructureError, try_get_ast
 QueryConnection = namedtuple(
     'QueryConnection', (
         'sink_query_node',  # SubQueryNode
-        'source_field_output_name',
+        'source_field_out_name',
         # str, the unique out name on the @output of the the source property field in the stitch
-        'sink_field_output_name',
+        'sink_field_out_name',
         # str, the unique out name on the @output of the the sink property field in the stitch
     )
 )
@@ -86,19 +86,17 @@ def split_query(query_ast, merged_schema_descriptor):
     # that's needed to detect and address stitching fields. However, before this issue is
     # fixed, it's necessary to use additional information from pre-processing the schema AST
     edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
-    type_name_to_schema_id = merged_schema_descriptor.type_name_to_schema_id
     intermediate_out_name_assigner = IntermediateOutNameAssigner()
 
     root_query_node = SubQueryNode(query_ast)
-    type_info = TypeInfo(merged_schema_descriptor.schema)
     query_nodes_to_split = [root_query_node]
 
     # Construct full tree of SubQueryNodes in a dfs pattern
     while len(query_nodes_to_split) > 0:
         current_node_to_split = query_nodes_to_split.pop()
 
-        _split_query_one_level(current_node_to_split, type_info, edge_to_stitch_fields,
-                               type_name_to_schema_id, intermediate_out_name_assigner)
+        _split_query_one_level(current_node_to_split, merged_schema_descriptor,
+                               edge_to_stitch_fields, intermediate_out_name_assigner)
 
         query_nodes_to_split.extend(
             child_query_connection.sink_query_node
@@ -108,31 +106,80 @@ def split_query(query_ast, merged_schema_descriptor):
     return root_query_node, frozenset(intermediate_out_name_assigner.intermediate_output_names)
 
 
-def _split_query_one_level(query_node, type_info, edge_to_stitch_fields, type_name_to_schema_id,
+def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_fields,
                            intermediate_out_name_assigner):
     """Modify query_node to have new children and new query ast
 
     The AST contained in the query_node will not be modified, just replaced by a new, different
     AST.
     """
-    root_selection_ast = get_only_query_definition(query_node.query_ast)  # OperationDefinition
-    root_selections = [root_selection_ast]
-    type_info.enter(root_selection_ast)
+    type_info = TypeInfo(merged_schema_descriptor.schema)
+    type_name_to_schema_id = merged_schema_descriptor.type_name_to_schema_id
 
-    new_root_selections = _split_query_ast_recursive(
-        query_node, root_selection_ast, root_selections, type_info, edge_to_stitch_fields,
-        type_name_to_schema_id, intermediate_out_name_assigner
+    operation_definition = get_only_query_definition(query_node.query_ast, GraphQLValidationError)
+
+    type_info.enter(operation_definition)
+    new_operation_definition = _split_query_ast_recursive(
+        query_node, operation_definition, [operation_definition], type_info,
+        edge_to_stitch_fields, type_name_to_schema_id, intermediate_out_name_assigner
     )
+    type_info.leave(operation_definition)
+
     query_node.query_ast = ast_types.Document(
-        definitions=new_root_selections
+        definitions=[new_operation_definition]
     )
+    # Set schema id, check for consistency
+    visitor = TypeInfoVisitor(
+        type_info, SchemaIdSetterVisitor(type_info, query_node, type_name_to_schema_id)
+    )
+    visit(query_node.query_ast, visitor)
+
     if query_node.schema_id is None:
         raise AssertionError(
             u'Unreachable code reached. The schema id of query piece "{}" has not been '
             u'determined.'.format(query_node.query_ast)
         )
     assert(query_node.schema_id is not None)
-    type_info.leave(root_selection_ast)
+
+
+class SchemaIdSetterVisitor(Visitor):
+    def __init__(self, type_info, query_node, type_name_to_schema_id):
+        self.type_info = type_info
+        self.query_node = query_node
+        self.type_name_to_schema_id = type_name_to_schema_id
+
+    def enter_Field(self, *args):
+        child_type_name = strip_non_null_and_list_from_type(self.type_info.get_type()).name
+        self._check_or_set_schema_id(child_type_name)
+
+    def enter_InlineFragment(self, node, *args):
+        self._check_or_set_schema_id(node.type_condition.name.value)
+
+    def _check_or_set_schema_id(self, type_name):
+        """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
+
+        Args:
+            type_name: str, name of the type whose schema id we're comparing against the
+                       previously recorded schema id
+        """
+        if type_name in self.type_name_to_schema_id:  # It may be a scalar, and thus not found
+            current_type_schema_id = self.type_name_to_schema_id[type_name]
+            prior_type_schema_id = self.query_node.schema_id
+            if prior_type_schema_id is None:  # First time checking schema_id
+                self.query_node.schema_id = current_type_schema_id
+            elif current_type_schema_id != prior_type_schema_id:
+                # A single query piece has types from two schemas -- merged_schema_descriptor
+                # is invalid: an edge field without a @stitch directive crosses schemas,
+                # or type_name_to_schema_id is wrong
+                raise SchemaStructureError(
+                    u'The provided merged schema descriptor may be invalid. Perhaps '
+                    u'some edge that does not have a @stitch directive crosses schemas. As '
+                    u'a result, query piece "{}", which is in the process of being broken '
+                    u'down, appears to contain types from more than one schema. Type "{}" '
+                    u'belongs to schema "{}", while some other type belongs to schema "{}".'
+                    u''.format(self.query_node.query_ast, type_name,
+                               current_type_schema_id, prior_type_schema_id)
+                )
 
 
 def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
@@ -156,14 +203,15 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
             raise SchemaStructureError(
                 u'The provided merged schema descriptor may be invalid.'
             )
-        while isinstance(child_type, (GraphQLList, GraphQLNonNull)):  # Unwrap List and NonNull
-            child_type = child_type.of_type
-        child_type_name = child_type.name
+        child_type_name = strip_non_null_and_list_from_type(child_type).name
 
+        parent_type_name = type_info.get_parent_type().name
         edge_field_name = ast.name.value
-        if (child_type_name, edge_field_name) in edge_to_stitch_fields:
+        if (parent_type_name, edge_field_name) in edge_to_stitch_fields:
+            # parent_field_name and child_field_name are names of the property fields used in the
+            # stitch
             parent_field_name, child_field_name = \
-                edge_to_stitch_fields[(child_type_name, edge_field_name)]
+                edge_to_stitch_fields[(parent_type_name, edge_field_name)]
             # Deal with parent
             # Get field with existing directives
             parent_property_field = _get_property_field_to_return(
@@ -186,26 +234,21 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
             )
 
             return parent_property_field
-        else:
-            # Check schema id matched
-            # TODO: do the same to type coercions?
-            # This part should be taken out to its own part
-            _check_or_set_schema_id(query_node, child_type_name, type_name_to_schema_id)
 
     # No split here
-    selections = ast.selection_set.selections
-    if selections is None:  # Nothing to recurse on
+    if ast.selection_set is None:  # Property field, nothing to recurse on
         return ast
+    selections = ast.selection_set.selections
 
-    type_info.enter(ast.selection_set)
     new_selections = []
     made_changes = False
 
+    type_info.enter(ast.selection_set)
     for selection in selections:  # Recurse on children
         type_info.enter(selection)
         # NOTE: By the time we reach any cross schema edge fields, new_selections contains all
         # property fields, including any new property fields created by previous cross schema
-        # edge fields
+        # edge fields, and therefore will not create duplicate new fields
         new_selection = _split_query_ast_recursive(query_node, selection, new_selections,
                                                    type_info, edge_to_stitch_fields,
                                                    type_name_to_schema_id,
@@ -231,37 +274,10 @@ def _split_query_ast_recursive(query_node, ast, parent_selections, type_info,
 
     if made_changes:
         ast_copy = copy(ast)
-        ast_copy.selections = new_selections
+        ast_copy.selection_set.selections = new_selections
         return ast_copy
     else:
         return ast
-
-
-def _check_or_set_schema_id(query_node, type_name, type_name_to_schema_id):
-    """Set the schema id of the root node if not yet set, otherwise check schema ids agree.
-
-    Args:
-        type_name: str, name of the type whose schema id we're comparing against the
-                   previously recorded schema id
-    """
-    if type_name in type_name_to_schema_id:  # It may be a scalar, and thus not found
-        current_type_schema_id = type_name_to_schema_id[type_name]
-        prior_type_schema_id = query_node.schema_id
-        if prior_type_schema_id is None:  # First time checking schema_id
-            query_node.schema_id = current_type_schema_id
-        elif current_type_schema_id != prior_type_schema_id:
-            # A single query piece has types from two schemas -- merged_schema_descriptor
-            # is invalid: an edge field without a @stitch directive crosses schemas,
-            # or type_name_to_schema_id is wrong
-            raise SchemaStructureError(
-                u'The provided merged schema descriptor may be invalid. Perhaps '
-                u'some edge that does not have a @stitch directive crosses schemas. As '
-                u'a result, query piece "{}", which is in the process of being broken '
-                u'down, appears to contain types from more than one schema. Type "{}" '
-                u'belongs to schema "{}", while some other type belongs to schema "{}".'
-                u''.format(print_ast(query_node.query_ast), type_name,
-                           current_type_schema_id, prior_type_schema_id)
-            )
 
 
 def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
@@ -390,9 +406,7 @@ def _get_child_type_and_selections(ast, type_info):
             u'corresponding to the field "{}" under type "{}" cannot be '
             u'found.'.format(ast.name.value, type_info.get_parent_type())
         )
-    while isinstance(child_type, (GraphQLList, GraphQLNonNull)):  # Unwrap List and NonNull
-        child_type = child_type.of_type
-    child_type_name = child_type.name
+    child_type_name = strip_non_null_and_list_from_type(child_type).name
 
     child_selection_set = ast.selection_set
     # Adjust for type coercion
@@ -527,7 +541,7 @@ def _replace_or_insert_property_field(selections, new_field):
     If there is an existing field with the same name as new_field, replace. Otherwise, insert
     new_field after the last existing property field.
 
-    Inputs not modified.
+    Inputs are not modified.
 
     Args:
         selections: List[Union[Field, InlineFragment]], where all property fields occur
@@ -548,21 +562,24 @@ def _replace_or_insert_property_field(selections, new_field):
         if not _is_property_field(selection):
             selections.insert(index, new_field)
             return selections
+    # No vertex fields and no property fields of the same name
+    selections.append(new_field)
+    return selections
 
 
-def _add_query_connections(parent_query_node, child_query_node, parent_field_output_name,
-                           child_field_output_name):
+def _add_query_connections(parent_query_node, child_query_node, parent_field_out_name,
+                           child_field_out_name):
     """Modify parent and child SubQueryNodes by adding QueryConnections between them."""
     # Create QueryConnections
     new_query_connection_from_parent = QueryConnection(
         sink_query_node=child_query_node,
-        source_field_output_name=parent_field_output_name,
-        sink_field_output_name=child_field_output_name,
+        source_field_out_name=parent_field_out_name,
+        sink_field_out_name=child_field_out_name,
     )
     new_query_connection_from_child = QueryConnection(
         sink_query_node=parent_query_node,
-        source_field_output_name=child_field_output_name,
-        sink_field_output_name=parent_field_output_name,
+        source_field_out_name=child_field_out_name,
+        sink_field_out_name=parent_field_out_name,
     )
     # Add QueryConnections
     parent_query_node.child_query_connections.append(new_query_connection_from_parent)
@@ -583,6 +600,7 @@ def _create_query_document(root_vertex_field_name, root_selections):
                             # as a root field (not all types are required to have a
                             # corresponding root vertex field), then this query will be
                             # invalid
+                            # TODO: warn the user?
                             selection_set=ast_types.SelectionSet(
                                 selections=root_selections,
                             ),
