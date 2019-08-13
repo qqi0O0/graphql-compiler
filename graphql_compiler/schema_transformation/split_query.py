@@ -5,13 +5,12 @@ from copy import copy
 from graphql.language import ast as ast_types
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.utils.type_info import TypeInfo
-from graphql.validation import validate
 
 from ..ast_manipulation import get_only_query_definition
 from ..compiler.helpers import strip_non_null_and_list_from_type
 from ..exceptions import GraphQLValidationError
 from .utils import (
-    SchemaStructureError, try_get_ast, is_property_field, check_query_is_valid_to_split
+    SchemaStructureError, check_query_is_valid_to_split, is_property_field, try_get_ast
 )
 
 
