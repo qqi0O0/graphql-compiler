@@ -81,7 +81,6 @@ class RenameQueryVisitor(Visitor):
         Returns:
             Field, possibly with a new name. If the name was not changed, the returned object
             is the exact same object as the input
-            Name object, possibly 
         """
         name_string = node.name.value
         new_name_string = self.renamings.get(name_string, name_string)  # Default use original
