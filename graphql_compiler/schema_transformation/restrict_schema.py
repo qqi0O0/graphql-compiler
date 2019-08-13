@@ -122,19 +122,18 @@ class RestrictSchemaVisitor(Visitor):
         else:  # Field is a vertex field going to a removed type
             return REMOVE
 
-    def leave(self, node, *args):
-        """If leaving a type with fields, check not all fields were removed.
+    def leave_ObjectTypeDefinition(self, node, *args):
+        """Check not all fields were removed."""
+        if len(node.fields) == 0:  # All fields removed
+            raise SchemaStructureError(
+                u'Type "{}" is kept, but all of its fields have been removed due to being '
+                u'vertex fields to types that were removed.'.format(node.name.value)
+            )
 
-        Args:
-            node: Node type, representing an element of an AST
-
-        Raises:
-            SchemaStructureError if a type has all of its fields removed
-        """
-        node_type = type(node).__name__
-        if node_type == 'ObjectTypeDefinition' or node_type == 'InterfaceTypeDefinition':
-            if len(node.fields) == 0:  # All fields removed
-                raise SchemaStructureError(
-                    u'Type "{}" is kept, but all of its fields have been removed due to being '
-                    u'vertex fields to types that were removed.'.format(node.name.value)
-                )
+    def leave_InterfaceTypeDefinition(self, node, *args):
+        """Check not all fields were removed."""
+        if len(node.fields) == 0:  # All fields removed
+            raise SchemaStructureError(
+                u'Interface "{}" is kept, but all of its fields have been removed due to being '
+                u'vertex fields to types that were removed.'.format(node.name.value)
+            )
