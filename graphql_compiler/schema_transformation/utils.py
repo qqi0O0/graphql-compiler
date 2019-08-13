@@ -10,8 +10,9 @@ from graphql.utils.assert_valid_name import COMPILED_NAME_PATTERN
 from graphql.validation import validate
 import six
 
-from ..schema import FilterDirective, OutputDirective, OptionalDirective
+from ..ast_manipulation import get_ast_with_non_null_and_list_stripped
 from ..exceptions import GraphQLError, GraphQLValidationError
+from ..schema import FilterDirective, OutputDirective, OptionalDirective
 
 
 class SchemaTransformError(GraphQLError):
@@ -270,10 +271,7 @@ class CheckQueryTypeFieldsNameMatchVisitor(Visitor):
         """
         if self.in_query_type:
             field_name = node.name.value
-            type_node = node.type
-            # NamedType node may be wrapped in several layers of NonNullType or ListType
-            while not isinstance(type_node, NamedType):
-                type_node = type_node.type
+            type_node = get_ast_with_non_null_and_list_stripped(node.type)
             queried_type_name = type_node.name.value
             if field_name != queried_type_name:
                 raise SchemaStructureError(

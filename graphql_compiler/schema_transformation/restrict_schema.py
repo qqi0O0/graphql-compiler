@@ -1,7 +1,10 @@
+from copy import copy
+
 from graphql import build_ast_schema
 from graphql.language import ast as ast_types
 from graphql.language.visitor import visit, Visitor, REMOVE
 
+from ..ast_manipulation import get_ast_with_non_null_and_list_stripped
 from .utils import SchemaStructureError, get_query_type_name, get_scalar_names
 
 
@@ -48,13 +51,6 @@ def restrict_schema(schema_ast, types_to_keep):
 
 class RestrictSchemaVisitor(Visitor):
     """Remove types that are not explicitly kept, and fields go these types."""
-    normal_definition_types = frozenset({
-        'InterfaceTypeDefinition',
-        'ObjectTypeDefinition',
-    })
-    union_definition_type = 'UnionTypeDefinition',
-    field_definition_type = 'FieldDefinition'
-
     def __init__(self, types_to_keep, query_type, scalars):
         """Create a visitor for removing types and fields.
 
@@ -68,42 +64,77 @@ class RestrictSchemaVisitor(Visitor):
         self.query_type = query_type
         self.scalars = scalars
 
-    def enter(self, node, *args):
-        """
+    def enter_ObjectTypeDefinition(self, node, *args):
+        """Remove definition if needed, remove any interfaces it implements that are not kept."""
+        node_name = node.name.value
+        if node_name == self.query_type or node_name in self.types_to_keep:
+            # Node is kept, now remove any interface necessary
+            kept_interfaces = []
+            made_changes = False
+            if node.interfaces is not None:
+                for interface in node.interfaces:
+                    interface_name = interface.name.value
+                    if interface_name in self.types_to_keep:
+                        kept_interfaces.append(interface)
+                    else:
+                        made_changes = True
+            if made_changes:
+                node_with_new_interfaces = copy(node)
+                node_with_new_interfaces.interfaces = kept_interfaces
+                return node_with_new_interfaces
+            else:
+                return None
+        else:
+            return REMOVE
+
+    def enter_InterfaceTypeDefinition(self, node, *args):
+        """Remove definition if needed."""
+        node_name = node.name.value
+        if node_name in self.types_to_keep:
+            return None
+        else:
+            return REMOVE
+
+    def enter_UnionTypeDefinition(self, node, *args):
+        """Remove definition if needed, check all subtypes also kept if definition kept."""
+        node_name = node.name.value
+        if node_name in self.types_to_keep:
+            # Check that all subtypes of the union are also kept
+            union_sub_types = [sub_type.name.value for sub_type in node.types]
+            if any(
+                union_sub_type not in self.types_to_keep
+                for union_sub_type in union_sub_types
+            ):
+                raise SchemaStructureError(
+                    u'Not all of the subtypes, {}, of the union type "{}" are in the set of '
+                    u'types to keep, {}.'.format(union_sub_types, node_name, self.types_to_keep)
+                )
+            return None
+        else:
+            return REMOVE
+
+    def enter_FieldDefinition(self, node, *args):
+        """Remove definition if field goes to type that is removed."""
+        field_type = get_ast_with_non_null_and_list_stripped(node.type)
+        field_type_name = field_type.name.value
+        if field_type_name in self.types_to_keep or field_type_name in self.scalars:
+            return None
+        else:  # Field is a vertex field going to a removed type
+            return REMOVE
+
+    def leave(self, node, *args):
+        """If leaving a type with fields, check not all fields were removed.
+
+        Args:
+            node: Node type, representing an element of an AST
+
+        Raises:
+            SchemaStructureError if a type has all of its fields removed
         """
         node_type = type(node).__name__
-        if node_type in self.normal_definition_types:
-            node_name = node.name.value
-            if node_name == self.query_type:  # Query type, don't remove even if unlisted
-                return None
-            elif node_name in self.types_to_keep:
-                return None
-            else:
-                return REMOVE
-        elif node_type == self.union_definition_type:
-            node_name = node.name.value
-            if node_name in self.type_to_keep:
-                # Check that all subtypes of the union are also kept
-                union_sub_types = [sub_type.name.value for subtype in node.types]
-                if any(
-                    union_sub_type not in self.types_to_keep
-                    for union_sub_type in union_sub_types
-                ):
-                    raise SchemaStructureError(
-                        u'Not all of the subtypes, {}, of the union type "{}" are in the set of '
-                        u'types to keep.'.format(union_sub_types, node_name)
-                    )
-                return None
-            else:
-                return REMOVE
-        elif node_type == self.field_definition_type:
-            type_of_field = node.type
-            while not isinstance(type_of_field, ast_types.NamedType):
-                type_of_field = type_of_field.type
-            type_name_of_field = type_of_field.name.value
-            if type_name_of_field in self.types_to_keep or type_name_of_field in self.scalars:
-                return None
-            else:
-                return REMOVE
-        else:
-            return None
+        if node_type == 'ObjectTypeDefinition' or node_type == 'InterfaceTypeDefinition':
+            if len(node.fields) == 0:  # All fields removed
+                raise SchemaStructureError(
+                    u'Type "{}" is kept, but all of its fields have been removed due to being '
+                    u'vertex fields to types that were removed.'.format(node.name.value)
+                )
