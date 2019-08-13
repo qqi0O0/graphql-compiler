@@ -1,4 +1,5 @@
 # Copyright 2019-present Kensho Technologies, LLC.
+from copy import copy
 import string
 
 from graphql import build_ast_schema
@@ -151,6 +152,37 @@ def try_get_ast(asts, target_name, target_type):
         if isinstance(ast, target_type) and ast.name.value == target_name:
             return ast
     return None
+
+
+def get_copy_of_node_with_new_name(node, new_name):
+    """Return a node with new_name as its name and otherwise identical to the input node.
+
+    Args:
+        node: type Node, with a .name attribute. Not modified by this function
+        new_name: str, name to give to the output node
+
+    Returns:
+        Node, with new_name as its name and otherwise identical to the input node
+    """
+    node_type = type(node).__name__
+    allowed_types = frozenset((
+        'EnumTypeDefinition',
+        'Field',
+        'FieldDefinition',
+        'InterfaceTypeDefinition',
+        'NamedType',
+        'ObjectTypeDefinition',
+        'UnionTypeDefinition',
+    ))
+    if node_type not in allowed_types:
+        raise AssertionError(
+            u'Input node {} of type {} is not allowed, only {} are allowed.'.format(
+                node, node_type, allowed_types
+            )
+        )
+    node_with_new_name = copy(node)  # shallow copy is enough
+    node_with_new_name.name = ast_types.Name(value=new_name)
+    return node_with_new_name
 
 
 class CheckValidTypesAndNamesVisitor(Visitor):
