@@ -1,4 +1,4 @@
-"""
+# Copyright 2019-present Kensho Technologies, LLC.
 from textwrap import dedent
 import unittest
 
@@ -146,4 +146,3 @@ class TestModifySplitQuery(unittest.TestCase):
 #        query_node.add_output_and_filter_directives()
 #        print(query_node.print_query_plan())
 
-"""

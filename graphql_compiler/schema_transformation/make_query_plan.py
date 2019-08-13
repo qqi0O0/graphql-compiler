@@ -23,8 +23,8 @@ SubQueryPlan = namedtuple(
 OutputJoinDescriptor = namedtuple(
     'OutputJoinDescriptor', (
         'output_names',  # Tuple[str, str], (parent output name, child output name)
-        # 'is_optional',
-        # May be expanded to have more attributes, describing how the join should be made
+        # May be expanded to have more attributes, e.g. is_optional, describing how the join
+        # should be made
     )
 )
 
