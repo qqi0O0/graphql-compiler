@@ -10,7 +10,8 @@ from ..ast_manipulation import get_only_query_definition
 from ..compiler.helpers import strip_non_null_and_list_from_type
 from ..exceptions import GraphQLValidationError
 from .utils import (
-    SchemaStructureError, check_query_is_valid_to_split, is_property_field, try_get_ast
+    SchemaStructureError, check_query_is_valid_to_split, is_property_field_ast,
+    try_get_ast_by_name_and_type
 )
 
 
@@ -248,7 +249,7 @@ def _split_query_ast_one_level_recursive(
 
         if new_selection is not selection:
             made_changes = True
-            if is_property_field(new_selection):
+            if is_property_field_ast(new_selection):
                 # If a property field is returned and is different from the input, then this is
                 # a property field used in stitching. If no existing field has this name, insert
                 # the new property field to end of property fields. If some existing field has
@@ -351,7 +352,7 @@ def _get_property_field(selections, field_name, directives_from_edge):
     )
 
     # Check parent_selection for existing field of given name
-    parent_field = try_get_ast(selections, field_name, ast_types.Field)
+    parent_field = try_get_ast_by_name_and_type(selections, field_name, ast_types.Field)
     if parent_field is not None:
         # Existing field, add all its directives
         directives_from_existing_field = parent_field.directives
@@ -367,7 +368,7 @@ def _get_property_field(selections, field_name, directives_from_edge):
                     u'can only exist on property fields.'.format(directive)
                 )
             elif directive.name.value == u'optional':
-                if try_get_ast(new_field.directives, u'optional', ast_types.Directive) is None:
+                if try_get_ast_by_name_and_type(new_field.directives, u'optional', ast_types.Directive) is None:
                     # New optional directive
                     new_field.directives.append(directive)
             elif directive.name.value == u'filter':
@@ -446,7 +447,7 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
             ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
         )):
             for field_definition in type_definition.fields:
-                stitch_directive = try_get_ast(
+                stitch_directive = try_get_ast_by_name_and_type(
                     field_definition.directives, u'stitch', ast_types.Directive
                 )
                 if stitch_directive is not None:
@@ -482,7 +483,7 @@ def _replace_or_insert_property_field(selections, new_field):
         ):
             selections[index] = new_field
             return selections
-        if not is_property_field(selection):
+        if not is_property_field_ast(selection):
             selections.insert(index, new_field)
             return selections
     # No vertex fields and no property fields of the same name
@@ -563,7 +564,7 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
         generated
     """
     # Check for existing directive
-    output_directive = try_get_ast(field.directives, u'output', ast_types.Directive)
+    output_directive = try_get_ast_by_name_and_type(field.directives, u'output', ast_types.Directive)
     if output_directive is None:
         # Create and add new directive to field
         out_name = intermediate_out_name_assigner.assign_and_return_out_name()

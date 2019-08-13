@@ -4,10 +4,10 @@ from copy import deepcopy
 
 from graphql import print_ast
 from graphql.language import ast as ast_types
-from graphql.language.visit import visit, Visitor
+from graphql.language.visitor import visit, Visitor
 
 from ..exceptions import GraphQLValidationError
-from .utils import try_get_ast
+from .utils import try_get_ast_by_name_and_type
 
 
 SubQueryPlan = namedtuple(
