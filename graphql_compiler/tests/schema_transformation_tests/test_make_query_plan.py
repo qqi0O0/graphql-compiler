@@ -9,6 +9,9 @@ from .example_schema import basic_merged_schema
 
 
 class TestModifySplitQuery(unittest.TestCase):
+    # TODO: a few tests to check the structure of the output, a few tests to check observers
+    # (like print_query_plan)
+
     def get_sub_query_node(self, existing_parent_directives, existing_child_directives):
         # These example nodes don't contain Nones, have tests where ASTs contain Nones
         parent_str = dedent('''\
@@ -30,12 +33,8 @@ class TestModifySplitQuery(unittest.TestCase):
         child_node = SubQueryNode(parse(child_str))
         parent_node.schema_id = 'first'
         child_node.schema_id = 'second'
-        parent_field_path = [
-            'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections', 0
-        ]
-        child_field_path = [
-            'definitions', 0, 'selection_set', 'selections', 0, 'selection_set', 'selections', 1
-        ]
+        parent_out_name = ''
+        child_out_name = ''
         parent_to_child_connection = QueryConnection(
             sink_query_node=child_node,
             source_field_path=parent_field_path,

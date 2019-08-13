@@ -44,13 +44,15 @@ QueryPlanDescriptor = namedtuple(
 
 
 def make_query_plan(root_sub_query_node, intermediate_output_names):
-    """Return a QueryPlanDescriptor, whose query ASTs have @filter and @output directives added.
+    """Return a QueryPlanDescriptor, whose query ASTs have @filters added.
 
-    For each stitch, if the property field in the parent used in the stitch does not already
-    have an @output directive, one will be added with an auto-generated out_name. The property
-    field in the child will correspondingly have an @filter directive with an in_collection
-    operation added. The name of the local variable in the filter directive is guaranteed to
-    be identical to the outname of the parent's @output directive.
+    For each parent of parent and child SubQueryNodes, a new @filter directive will be added
+    in the child AST, on the field with the @output directive with an out_name equal to the
+    child's out name as specified in the QueryConnections. The newly added @filter will be a
+    in_collection type filter, and the name of the local variable is guaranteed to be the same
+    as the out_name of the parent @output. When the child is to be executed, the local variable
+    should take as input the output of the parent with the same name.
+    TODO rephrase the above
 
     ASTs contained in the input node and its children nodes will not be modified.
 
@@ -143,14 +145,27 @@ def _make_query_plan_recursive(sub_query_node, sub_query_plan):
 def _add_filter_at_field_with_output(ast, field_out_name, input_filter_name):
     """Return an AST with @filter added at the field with the specified @output, if found.
 
-    Input ast not modified.
+    Args:
+        ast: Field, InlineFragment, or OperationDefinition, an AST Node type that occurs in
+             the selections of a SelectionSet. It is not modified by this function
+        field_out_name: str, the out_name of an @output directive. This function will create
+                        a new @filter directive on the field that has an @output directive
+                        with this out_name
+        input_filter_name: str, the name of the local variable in the new @filter directive
+                           created
 
-    If not edited, return the exact input ast object.
+    Returns:
+        Field, InlineFragment, or OperationDefinition, identical to the input ast except
+        with an @filter added at the specified field if such a field is found. If no changes
+        were made, this is the same object as the input
     """
     if not isinstance(ast, (
         ast_types.Field, ast_types.InlineFragment, ast_types.OperationDefinition
     )):
-        return ast
+        raise AssertionError(
+            u'Input ast is of type "{}", which should not be a selection.'
+            u''.format(type(ast).__name__)
+        )
 
     if isinstance(ast, ast_types.Field):
         # Check whether this field has the expected directive, if so, modify and return
