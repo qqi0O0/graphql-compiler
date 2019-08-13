@@ -396,3 +396,51 @@ class TestRestrictSchema(unittest.TestCase):
         schema_ast = parse(schema_str)
         restricted_schema_ast = restrict_schema(schema_ast, {'Person'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
+
+    def test_unreachable_type(self):
+        schema_str = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              name: String
+              pet: Pet
+              friend: Person
+            }
+
+            type Pet {
+              name: String
+              breed: Breed
+            }
+
+            type Breed {
+              name: String
+            }
+
+            type SchemaQuery {
+              Person: Person
+              Pet: Pet
+            }
+        ''')
+        restricted_schema_str = dedent('''\
+            schema {
+              query: SchemaQuery
+            }
+
+            type Person {
+              name: String
+              friend: Person
+            }
+
+            type Breed {
+              name: String
+            }
+
+            type SchemaQuery {
+              Person: Person
+            }
+        ''')
+        schema_ast = parse(schema_str)
+        restricted_schema_ast = restrict_schema(schema_ast, {'Person', 'Breed'})
+        self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
