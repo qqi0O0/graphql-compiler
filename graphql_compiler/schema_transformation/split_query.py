@@ -61,7 +61,7 @@ def split_query(query_ast, merged_schema_descriptor):
     Returns:
         Tuple[SubQueryNode, frozenset[str]]. The first element is the root of the tree of
         QueryNodes. Each node contains an AST representing a part of the overall query,
-        targeting aspecific schema. The second element is the set of all intermediate output
+        targeting a specific schema. The second element is the set of all intermediate output
         names that are to be removed at the end
 
     Raises:
@@ -74,7 +74,8 @@ def split_query(query_ast, merged_schema_descriptor):
     check_query_is_valid_to_split(merged_schema_descriptor.schema, query_ast)
 
     # If schema directives are correctly represented in the schema object, type_info is all
-    # that's needed to detect and address stitching fields. However, before this issue is
+    # that's needed to detect and address stitching fields. However, GraphQL currently ignores
+    # schema directives when converting an AST to a schema object. Until this issue is
     # fixed, it's necessary to use additional information from pre-processing the schema AST
     edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
     intermediate_out_name_assigner = IntermediateOutNameAssigner()
@@ -113,7 +114,7 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
         merged_schema_descriptor: MergedSchemaDescriptor, the schema that the query AST contained
                                   in the input query_node targets
         edge_to_stitch_fields: Dict[Tuple(str, str), Tuple(str, str)], mapping
-                               (type name, edge field name) to
+                               (type name, vertex field name) to
                                (source field name, sink field name) used in the @stitch directive
                                for each cross schema edge
         intermediate_out_name_assigner: IntermediateOutNameAssigner, object used to generate
@@ -162,7 +163,7 @@ def _split_query_ast_one_level_recursive(
 ):
     """Return a Node to replace the input AST by in the selections one level above.
 
-    - If the input AST starts with a cross schema edge, the output will be a Field object
+    - If the input AST starts with a cross schema vertex field, the output will be a Field object
       representing the property field used in the stitch
       - If a property field of the expected name already exists in the selections one level
         above (in parent_selections), the new Field will contain any existing directives of
@@ -189,7 +190,7 @@ def _split_query_ast_one_level_recursive(
         type_info: TypeInfo, used to get information about the types of fields while traversing
                    the query ast
         edge_to_stitch_fields: Dict[Tuple(str, str), Tuple(str, str)], mapping
-                               (type name, edge field name) to
+                               (type name, vertex field name) to
                                (source field name, sink field name) used in the @stitch directive
                                for each cross schema edge
         intermediate_out_name_assigner: IntermediateOutNameAssigner, object used to generate
@@ -239,9 +240,9 @@ def _split_query_ast_one_level_recursive(
     type_info.enter(ast.selection_set)
     for selection in selections:  # Recurse on children
         type_info.enter(selection)
-        # By the time we reach any cross schema edge fields, new_selections contains all
+        # By the time we reach any cross schema vertex fields, new_selections contains all
         # property fields, including any new property fields created by previous cross schema
-        # edge fields, and therefore will not create duplicate new fields
+        # vertex fields, and therefore will not create duplicate new fields
         new_selection = _split_query_ast_one_level_recursive(
             query_node, selection, new_selections, type_info, edge_to_stitch_fields,
             intermediate_out_name_assigner
@@ -281,7 +282,7 @@ def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
         out_Human {
           name
         }
-    where out_Human is a vertex edge going to type Human, the resulting document will be
+    where out_Human is a vertex field going to type Human, the resulting document will be
         {
           Human {
             name
@@ -362,13 +363,15 @@ def _get_property_field(selections, field_name, directives_from_edge):
     # Transfer directives from edge
     if directives_from_edge is not None:
         for directive in directives_from_edge:
-            if directive.name.value == u'output':  # output is illegal on edge field
+            if directive.name.value == u'output':  # output is illegal on vertex field
                 raise GraphQLValidationError(
-                    u'Directive "{}" is not allowed on an edge field, as @output directives '
+                    u'Directive "{}" is not allowed on a vertex field, as @output directives '
                     u'can only exist on property fields.'.format(directive)
                 )
             elif directive.name.value == u'optional':
-                if try_get_ast_by_name_and_type(new_field.directives, u'optional', ast_types.Directive) is None:
+                if try_get_ast_by_name_and_type(
+                    new_field.directives, u'optional', ast_types.Directive
+                ) is None:
                     # New optional directive
                     new_field.directives.append(directive)
             elif directive.name.value == u'filter':
@@ -428,7 +431,7 @@ def _get_child_type_and_selections(ast, type_info):
 def _get_edge_to_stitch_fields(merged_schema_descriptor):
     """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
 
-    This is necessary only because graphql currently doesn't process schema directives correctly.
+    This is necessary only because GraphQL currently doesn't process schema directives correctly.
     Once schema directives are correctly added to GraphQLSchema objects, this part may be
     removed as directives on a schema field can be directly accessed.
 
@@ -437,7 +440,7 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
                                   and a map from names of types to their schema ids
 
     Returns:
-        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, edge field name) to
+        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, vertex field name) to
         (source field name, sink field name) used in the @stitch directive, for each cross
         schema edge
     """
@@ -632,8 +635,8 @@ class SchemaIdSetterVisitor(Visitor):
                 # is invalid: an edge field without a @stitch directive crosses schemas,
                 # or type_name_to_schema_id is wrong
                 raise SchemaStructureError(
-                    u'The provided merged schema descriptor may be invalid. Perhaps '
-                    u'some edge that does not have a @stitch directive crosses schemas. As '
+                    u'The provided merged schema descriptor may be invalid. Perhaps some '
+                    u'vertex field that does not have a @stitch directive crosses schemas. As '
                     u'a result, query piece "{}" appears to contain types from more than '
                     u'one schema. Type "{}" belongs to schema "{}", while some other type '
                     u'belongs to schema "{}".'.format(

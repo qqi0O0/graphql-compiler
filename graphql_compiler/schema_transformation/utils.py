@@ -365,10 +365,10 @@ class CheckQueryIsValidToSplitVisitor(Visitor):
 
     def enter_SelectionSet(self, node, *args):
         """Check property fields occur before vertex fields and type coercions in selection."""
-        past_property_fields = False  # Whether we're seen a vertex field
+        seen_non_property_field = False  # Whether we're seen a vertex field/type coercion
         for field in node.selections:
             if is_property_field_ast(field):
-                if past_property_fields:
+                if seen_non_property_field:
                     raise GraphQLValidationError(
                         u'In the selections {}, the property field {} occurs after a vertex '
                         u'field or a type coercion statement, which is not allowed, as all '
@@ -377,7 +377,7 @@ class CheckQueryIsValidToSplitVisitor(Visitor):
                         )
                     )
             else:
-                past_property_fields = True
+                seen_non_property_field = True
 
 
 def check_query_is_valid_to_split(schema, query_ast):
