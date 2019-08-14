@@ -9,6 +9,7 @@ from graphql.utils.type_info import TypeInfo
 from ..ast_manipulation import get_only_query_definition
 from ..compiler.helpers import strip_non_null_and_list_from_type
 from ..exceptions import GraphQLValidationError
+from ..schema import FilterDirective, OutputDirective, OptionalDirective
 from .utils import (
     SchemaStructureError, check_query_is_valid_to_split, is_property_field_ast,
     try_get_ast_by_name_and_type
@@ -363,18 +364,18 @@ def _get_property_field(selections, field_name, directives_from_edge):
     # Transfer directives from edge
     if directives_from_edge is not None:
         for directive in directives_from_edge:
-            if directive.name.value == u'output':  # output is illegal on vertex field
+            if directive.name.value == OutputDirective.name:  # output illegal on vertex field
                 raise GraphQLValidationError(
                     u'Directive "{}" is not allowed on a vertex field, as @output directives '
                     u'can only exist on property fields.'.format(directive)
                 )
-            elif directive.name.value == u'optional':
+            elif directive.name.value == OptionalDirective.name:
                 if try_get_ast_by_name_and_type(
-                    new_field.directives, u'optional', ast_types.Directive
+                    new_field.directives, OptinalDirective.name, ast_types.Directive
                 ) is None:
                     # New optional directive
                     new_field.directives.append(directive)
-            elif directive.name.value == u'filter':
+            elif directive.name.value == FilterDirective.name:
                 new_field.directives.append(directive)
             else:
                 raise AssertionError(
@@ -543,7 +544,7 @@ def _get_query_document(root_vertex_field_name, root_selections):
 def _get_output_directive(out_name):
     """Return a Directive representing an @output with the input out_name."""
     return ast_types.Directive(
-        name=ast_types.Name(value=u'output'),
+        name=ast_types.Name(value=OutputDirective.name),
         arguments=[
             ast_types.Argument(
                 name=ast_types.Name(value=u'out_name'),
@@ -567,7 +568,9 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
         generated
     """
     # Check for existing directive
-    output_directive = try_get_ast_by_name_and_type(field.directives, u'output', ast_types.Directive)
+    output_directive = try_get_ast_by_name_and_type(
+        field.directives, OutputDirective.name, ast_types.Directive
+    )
     if output_directive is None:
         # Create and add new directive to field
         out_name = intermediate_out_name_assigner.assign_and_return_out_name()
@@ -582,6 +585,7 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
 
 class IntermediateOutNameAssigner(object):
     """Used to generate and keep track of out_name of @output directives."""
+
     def __init__(self):
         """Create assigner with empty records."""
         self.intermediate_output_names = set()
