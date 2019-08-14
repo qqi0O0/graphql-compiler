@@ -3,7 +3,7 @@ import unittest
 
 from graphql import parse, print_ast
 
-from ...schema_transformation.restrict_schema import restrict_schema
+from ...schema_transformation.restrict_schema_types import restrict_schema_types
 from ...schema_transformation.utils import SchemaStructureError
 
 
@@ -46,7 +46,7 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Person'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Person'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
 
     def test_original_unmodified(self):
@@ -73,7 +73,7 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restrict_schema(schema_ast, {'Person'})
+        restrict_schema_types(schema_ast, {'Person'})
         self.assertEqual(schema_ast, parse(schema_str))
 
     def test_interface_kept(self):
@@ -129,7 +129,7 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Entity', 'Person'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Entity', 'Person'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
 
     def test_interface_removed(self):
@@ -188,7 +188,7 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Person', 'Pet'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Person', 'Pet'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
 
     def test_union_kept(self):
@@ -245,7 +245,7 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Person', 'Pet', 'PersonOrPet'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Person', 'Pet', 'PersonOrPet'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
 
     def test_union_removed(self):
@@ -291,7 +291,7 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Person'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Person'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
 
     def test_invalid_union(self):
@@ -323,7 +323,7 @@ class TestRestrictSchema(unittest.TestCase):
         ''')
         schema_ast = parse(schema_str)
         with self.assertRaises(SchemaStructureError):
-            restrict_schema(schema_ast, {'PersonOrPet', 'Pet'})
+            restrict_schema_types(schema_ast, {'PersonOrPet', 'Pet'})
 
     def test_invalid_all_fields_removed(self):
         schema_str = dedent('''\
@@ -348,7 +348,7 @@ class TestRestrictSchema(unittest.TestCase):
         ''')
         schema_ast = parse(schema_str)
         with self.assertRaises(SchemaStructureError):
-            restrict_schema(schema_ast, {'Pet'})
+            restrict_schema_types(schema_ast, {'Pet'})
 
     def test_user_defined_scalar(self):
         schema_str = dedent('''\
@@ -394,7 +394,7 @@ class TestRestrictSchema(unittest.TestCase):
             scalar Date
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Person'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Person'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
 
     def test_unreachable_type(self):
@@ -442,5 +442,5 @@ class TestRestrictSchema(unittest.TestCase):
             }
         ''')
         schema_ast = parse(schema_str)
-        restricted_schema_ast = restrict_schema(schema_ast, {'Person', 'Breed'})
+        restricted_schema_ast = restrict_schema_types(schema_ast, {'Person', 'Breed'})
         self.assertEqual(print_ast(restricted_schema_ast), restricted_schema_str)
