@@ -8,6 +8,16 @@ from ..ast_manipulation import get_ast_with_non_null_and_list_stripped
 from .utils import SchemaStructureError, get_query_type_name, get_scalar_names
 
 
+# Concern: If interface kept but some type implementing it is not kept, then we seem to expose
+# data that's not meant to be exposed -- e.g. I removed type Animal, how come I can still get
+# data about Animals from querying Entity?
+
+# Take in type_equivalence_hints and use subclasses. Require that if a type (Object or Interface)
+# is included, then all of its subclasses are also kept
+
+# What about maintaining parent types? If all the subclasses of a type are kept, should that type
+# also be kept? Probably shouldn't be an requirement. But a suggestion?
+
 def restrict_schema_types(schema_ast, types_to_keep):
     """Return new AST containing only a subset of types.
 
