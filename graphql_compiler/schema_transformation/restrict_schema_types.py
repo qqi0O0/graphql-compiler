@@ -18,6 +18,10 @@ from .utils import SchemaStructureError, get_query_type_name, get_scalar_names
 # What about maintaining parent types? If all the subclasses of a type are kept, should that type
 # also be kept? Probably shouldn't be an requirement. But a suggestion?
 
+# Another approach: types_to_keep only contains Object type names. Interface and union type names
+# are processed automatically. Any interface or union whose subtypes are all implemented will
+# be automatically included
+
 def restrict_schema_types(schema_ast, types_to_keep):
     """Return new AST containing only a subset of types.
 
