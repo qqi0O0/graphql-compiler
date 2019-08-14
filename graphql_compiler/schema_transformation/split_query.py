@@ -322,6 +322,8 @@ def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
     # Get new child_selections
     child_selections = _replace_or_insert_property_field(child_selections, child_property_field)
     # Wrap around
+    # NOTE: if child_type_name does not actually exist as a root field (not all types are
+    # required to have a corresponding root vertex field), then this query will be invalid
     child_query_ast = _get_query_document(child_type_name, child_selections)
     child_query_node = SubQueryNode(child_query_ast)
 
@@ -495,65 +497,6 @@ def _replace_or_insert_property_field(selections, new_field):
     return selections
 
 
-def _add_query_connections(parent_query_node, child_query_node, parent_field_out_name,
-                           child_field_out_name):
-    """Modify parent and child SubQueryNodes by adding QueryConnections between them."""
-    # Create QueryConnections
-    new_query_connection_from_parent = QueryConnection(
-        sink_query_node=child_query_node,
-        source_field_out_name=parent_field_out_name,
-        sink_field_out_name=child_field_out_name,
-    )
-    new_query_connection_from_child = QueryConnection(
-        sink_query_node=parent_query_node,
-        source_field_out_name=child_field_out_name,
-        sink_field_out_name=parent_field_out_name,
-    )
-    # Add QueryConnections
-    parent_query_node.child_query_connections.append(new_query_connection_from_parent)
-    child_query_node.parent_query_connection = new_query_connection_from_child
-
-
-def _get_query_document(root_vertex_field_name, root_selections):
-    """Return a Document representing a query with the specified name and selections."""
-    return ast_types.Document(
-        definitions=[
-            ast_types.OperationDefinition(
-                operation='query',
-                selection_set=ast_types.SelectionSet(
-                    selections=[
-                        ast_types.Field(
-                            name=ast_types.Name(value=root_vertex_field_name),
-                            # NOTE: if the root_vertex_field_name does not actually exist
-                            # as a root field (not all types are required to have a
-                            # corresponding root vertex field), then this query will be
-                            # invalid
-                            # TODO: warn the user?
-                            selection_set=ast_types.SelectionSet(
-                                selections=root_selections,
-                            ),
-                            directives=[],
-                        )
-                    ]
-                )
-            )
-        ]
-    )
-
-
-def _get_output_directive(out_name):
-    """Return a Directive representing an @output with the input out_name."""
-    return ast_types.Directive(
-        name=ast_types.Name(value=OutputDirective.name),
-        arguments=[
-            ast_types.Argument(
-                name=ast_types.Name(value=u'out_name'),
-                value=ast_types.StringValue(value=out_name),
-            ),
-        ],
-    )
-
-
 def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
     """Return out_name of @output on field, creating new @output if needed.
 
@@ -581,6 +524,60 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
         return out_name
     else:
         return output_directive.arguments[0].value.value  # Location of value of out_name
+
+
+def _get_output_directive(out_name):
+    """Return a Directive representing an @output with the input out_name."""
+    return ast_types.Directive(
+        name=ast_types.Name(value=OutputDirective.name),
+        arguments=[
+            ast_types.Argument(
+                name=ast_types.Name(value=u'out_name'),
+                value=ast_types.StringValue(value=out_name),
+            ),
+        ],
+    )
+
+
+def _get_query_document(root_vertex_field_name, root_selections):
+    """Return a Document representing a query with the specified name and selections."""
+    return ast_types.Document(
+        definitions=[
+            ast_types.OperationDefinition(
+                operation='query',
+                selection_set=ast_types.SelectionSet(
+                    selections=[
+                        ast_types.Field(
+                            name=ast_types.Name(value=root_vertex_field_name),
+                            selection_set=ast_types.SelectionSet(
+                                selections=root_selections,
+                            ),
+                            directives=[],
+                        )
+                    ]
+                )
+            )
+        ]
+    )
+
+
+def _add_query_connections(parent_query_node, child_query_node, parent_field_out_name,
+                           child_field_out_name):
+    """Modify parent and child SubQueryNodes by adding QueryConnections between them."""
+    # Create QueryConnections
+    new_query_connection_from_parent = QueryConnection(
+        sink_query_node=child_query_node,
+        source_field_out_name=parent_field_out_name,
+        sink_field_out_name=child_field_out_name,
+    )
+    new_query_connection_from_child = QueryConnection(
+        sink_query_node=parent_query_node,
+        source_field_out_name=child_field_out_name,
+        sink_field_out_name=parent_field_out_name,
+    )
+    # Add QueryConnections
+    parent_query_node.child_query_connections.append(new_query_connection_from_parent)
+    child_query_node.parent_query_connection = new_query_connection_from_child
 
 
 class IntermediateOutNameAssigner(object):
