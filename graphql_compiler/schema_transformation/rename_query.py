@@ -76,7 +76,7 @@ class RenameQueryVisitor(Visitor):
 
         Args:
             node: Field, an object representing a field in an AST, containing a .name attribute
-                  corresponding to an AST node of type Name
+                  corresponding to an AST node of type Name. It is not modified
 
         Returns:
             Field, possibly with a new name. If the name was not changed, the returned object
