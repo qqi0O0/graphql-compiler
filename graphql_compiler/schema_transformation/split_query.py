@@ -1,6 +1,7 @@
 # Copyright 2019-present Kensho Technologies, LLC.
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from copy import copy
+import six
 
 from graphql.language.ast import (
     Argument, Directive, Document, Field, InlineFragment, InterfaceTypeDefinition, Name,
@@ -171,7 +172,7 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
 
     type_info.enter(operation_definition)
     new_operation_definition = _split_query_ast_one_level_recursive(
-        query_node, operation_definition, [operation_definition], type_info,
+        query_node, operation_definition, type_info,
         edge_to_stitch_fields, intermediate_out_name_assigner
     )
     type_info.leave(operation_definition)
@@ -179,6 +180,7 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
     query_node.query_ast = Document(
         definitions=[new_operation_definition]
     )
+    print(query_node.query_ast)
     # Set schema id, check for consistency
     visitor = TypeInfoVisitor(
         type_info,
@@ -196,10 +198,148 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
 
 
 def _split_query_ast_one_level_recursive(
-    query_node, ast, parent_selections, type_info, edge_to_stitch_fields,
-    intermediate_out_name_assigner
+    query_node, ast, type_info, edge_to_stitch_fields, intermediate_out_name_assigner
 ):
+    """
+    """
+    # Split selections into three kinds: property fields, cross schema vertex fields, normal
+    # vertex fields/type coercions
+    type_info.enter(ast.selection_set)
+    parent_type_name = type_info.get_parent_type().name
+
+    property_fields_map, vertex_fields = _get_selections_split_by_type(
+        ast.selection_set.selections
+    )
+    intra_schema_fields, cross_schema_fields = _get_intra_schema_and_cross_schema_fields(
+        vertex_fields, parent_type_name, edge_to_stitch_fields
+    )
+    made_changes = False
+    if len(cross_schema_fields) > 0:
+        made_changes = True
+    # First, process cross schema fields
+    for cross_schema_field in cross_schema_fields:
+        type_info.enter(cross_schema_field)
+
+        if type_info.get_type() is not None:
+            child_type_name = strip_non_null_and_list_from_type(type_info.get_type()).name
+        else:
+            child_type_name = None
+
+        parent_field_name, child_field_name = edge_to_stitch_fields[
+            (parent_type_name, cross_schema_field.name.value)
+        ]
+        parent_property_field = _process_cross_schema_field(
+            query_node, cross_schema_field, property_fields_map, child_type_name,
+            parent_field_name, child_field_name, intermediate_out_name_assigner
+        )
+        # Replace or add in property field
+        property_fields_map[parent_property_field.name.value] = parent_property_field
+        type_info.leave(cross_schema_field)
+    # Then, process intra schema edges by recursing on them
+    new_intra_schema_fields = []
+    for intra_schema_field in intra_schema_fields:
+        type_info.enter(intra_schema_field)
+        new_intra_schema_field = _split_query_ast_one_level_recursive(
+            query_node, intra_schema_field, type_info, edge_to_stitch_fields,
+            intermediate_out_name_assigner
+        )
+        if new_intra_schema_field is not intra_schema_field:
+            made_changes = True
+        new_intra_schema_fields.append(new_intra_schema_field)
+        type_info.leave(intra_schema_field)
+    type_info.enter(ast.selection_set)
+    # Make copy, or return input if unchanged
+    if made_changes:
+        # Construct new selections
+        new_selections = list(six.itervalues(property_fields_map))
+        new_selections.extend(new_intra_schema_fields)
+        new_ast = copy(ast)
+        new_ast.selection_set = SelectionSet(selections=new_selections)
+        return new_ast
+    else:
+        return ast
+
+
+def _process_cross_schema_field(
+    query_node, cross_schema_field, property_fields_map, child_type_name, parent_field_name,
+    child_field_name, intermediate_out_name_assigner
+):
+    existing_property_field = property_fields_map.get(parent_field_name, None)
+    # Get property field inheriting the right directives
+    parent_property_field = _get_property_field(
+        existing_property_field, parent_field_name, cross_schema_field.directives
+    )
+    # Add @output if needed, record out_name
+    parent_output_name = _get_out_name_optionally_add_output(
+        parent_property_field, intermediate_out_name_assigner
+    )
+    # Create child query node around ast
+    child_query_node, child_output_name = _get_child_query_node_and_out_name(
+        cross_schema_field, child_type_name, child_field_name, intermediate_out_name_assigner
+    )
+    # Create and add QueryConnections
+    _add_query_connections(
+        query_node, child_query_node, parent_output_name, child_output_name
+    )
+    # Return parent property field used in the stitch, to be added in selections above
+    return parent_property_field
+
+
+def _get_selections_split_by_type(selections):
+    if selections is None:
+        raise AssertionError(u'')
+    property_fields_map = OrderedDict()
+    vertex_fields = []  # Also includes type coercions, if there is one
+    for selection in selections:
+        if is_property_field_ast(selection):
+            name = selection.name.value
+            if name in property_fields_map:
+                raise AssertionError(u'')  # probably GraphQLValidationError instead
+            property_fields_map[name] = selection
+        else:
+            vertex_fields.append(selection)
+    return property_fields_map, vertex_fields
+
+
+def _get_intra_schema_and_cross_schema_fields(
+    vertex_fields, parent_type_name, edge_to_stitch_fields
+):
+    intra_schema_fields = []
+    cross_schema_fields = []
+    for vertex_field in vertex_fields:
+        if isinstance(vertex_field, Field):
+            type_and_field = (parent_type_name, vertex_field.name.value)
+            if type_and_field in edge_to_stitch_fields:
+                cross_schema_fields.append(vertex_field)
+            else:
+                intra_schema_fields.append(vertex_field)
+        elif isinstance(vertex_field, InlineFragment):
+            intra_schema_fields.append(vertex_field)
+        else:
+            raise AssertionError(u'')
+    return intra_schema_fields, cross_schema_fields
+
     """Return a Node to replace the input AST by in the selections one level above.
+
+    1 - If the input AST starts with a cross schema vertex field, the output will be a Field
+        object representing the property field used in the stitch
+
+    2 - If the input AST is a property field, the input AST will be returned with no changes
+
+    3 - If neither 1 nor 2 applies, repeat the process on child selections of the input AST
+        by calling _split_query_ast_one_level_recursive on each child, and build up a list of
+        selections from these outputs. Call the input child AST `child_input`, and the return
+        value `child_output`
+        3.1 - If `child_input` is the same object as `child_output`, append the return value
+              to the list and make no other changes
+        3.2 - If `child_input` is not the same object as `child_output`, and `child_output` is
+              a property field, then the child must fall under case 1. In this case, we examine
+              the list of selections built so far
+            3.2.1 - If there exists a property field with the same name as `child_output`, we
+                    replace the existing field with `child_output`
+            
+              If there exists a property field with the
+              same name as `child_output`, then we replace this field with `child_output`. If
 
     - If the input AST starts with a cross schema vertex field, the output will be a Field object
       representing the property field used in the stitch
@@ -239,79 +379,9 @@ def _split_query_ast_one_level_recursive(
         Node object to replace the input AST in the selections one level above. If the output
         is unchanged from the input AST, the exact same object will be returned
     """
-    # Check if there is a split here. If so, split AST, make child query node, return property
-    # field. If not, recurse on all child selections (if any)
-    if isinstance(ast, Field):
-        parent_type_name = type_info.get_parent_type().name
-        edge_field_name = ast.name.value
-        if (parent_type_name, edge_field_name) in edge_to_stitch_fields:
-            # parent_field_name and child_field_name are names of property fields in the stitch
-            parent_field_name, child_field_name = \
-                edge_to_stitch_fields[(parent_type_name, edge_field_name)]
-            # Get parent field with existing directives
-            parent_property_field = _get_property_field(
-                parent_selections, parent_field_name, ast.directives
-            )
-            # Add @output if needed, record out_name
-            parent_output_name = _get_out_name_optionally_add_output(
-                parent_property_field, intermediate_out_name_assigner
-            )
-            # Create child query node around ast
-            child_query_node, child_output_name = _get_child_query_node_and_out_name(
-                ast, type_info, child_field_name, intermediate_out_name_assigner
-            )
-            # Create and add QueryConnections
-            _add_query_connections(
-                query_node, child_query_node, parent_output_name, child_output_name
-            )
-            # Return parent property field used in the stitch, to be added in selections above
-            return parent_property_field
-
-    # No split here
-    if ast.selection_set is None:  # Property field, nothing to recurse on
-        return ast
-    selections = ast.selection_set.selections
-
-    new_selections = []
-    made_changes = False
-
-    type_info.enter(ast.selection_set)
-    for selection in selections:  # Recurse on children
-        type_info.enter(selection)
-        # By the time we reach any cross schema vertex fields, new_selections contains all
-        # property fields, including any new property fields created by previous cross schema
-        # vertex fields, and therefore will not create duplicate new fields
-        new_selection = _split_query_ast_one_level_recursive(
-            query_node, selection, new_selections, type_info, edge_to_stitch_fields,
-            intermediate_out_name_assigner
-        )
-
-        if new_selection is not selection:
-            made_changes = True
-            if is_property_field_ast(new_selection):
-                # If a property field is returned and is different from the input, then this is
-                # a property field used in stitching. If no existing field has this name, insert
-                # the new property field to end of property fields. If some existing field has
-                # this name, replace the existing field with the returned field
-                new_selections = _replace_or_insert_property_field(new_selections, new_selection)
-                # The current actual selection is ignored, since it leads to a cut-off branch
-            else:
-                # Changes were made somewhere down the line, append changed version to end
-                new_selections.append(new_selection)
-        else:
-            new_selections.append(new_selection)
-        type_info.leave(selection)
-    type_info.leave(ast.selection_set)
-
-    if made_changes:
-        ast_copy = copy(ast)
-        ast_copy.selection_set = SelectionSet(selections=new_selections)
-        return ast_copy
-    else:
-        return ast
 
 
-def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
+def _get_child_query_node_and_out_name(ast, child_type_name, child_field_name,
                                        intermediate_out_name_assigner):
     """Create a query node out of ast, return node and unique out_name on field with input name.
 
@@ -336,7 +406,6 @@ def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
     Args:
         ast: type Node, representing the AST that we're using to build a child node. It is not
              modified by this function
-        type_info: TypeInfo, at the location of the ast
         child_field_name: str. If no field of this name currently exists as a part of the root
                           selections of the input AST, a new field will be created in the AST
                           contained in the output child query node
@@ -349,9 +418,12 @@ def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
         the out_name of the @output directive uniquely identifying the field used or stitching
         in this sub query node
     """
-    child_type_name, child_selections = _get_child_type_and_selections(ast, type_info)
+    child_type_name, child_selections = _get_child_type_and_selections(ast, child_type_name)
     # Get existing field with name in child
-    child_property_field = _get_property_field(child_selections, child_field_name, [])
+    existing_child_property_field = try_get_ast_by_name_and_type(
+        child_selections, child_field_name, Field
+    )
+    child_property_field = _get_property_field(existing_child_property_field, child_field_name, [])
     # Add @output if needed, record out_name
     child_output_name = _get_out_name_optionally_add_output(
         child_property_field, intermediate_out_name_assigner
@@ -367,7 +439,7 @@ def _get_child_query_node_and_out_name(ast, type_info, child_field_name,
     return child_query_node, child_output_name
 
 
-def _get_property_field(selections, field_name, directives_from_edge):
+def _get_property_field(parent_field, field_name, directives_from_edge):
     """Return a Field object with field_name, sharing directives with any such existing field.
 
     Any valid directives in directives_on_edge will be transferred over to the new field.
@@ -393,7 +465,6 @@ def _get_property_field(selections, field_name, directives_from_edge):
     )
 
     # Check parent_selection for existing field of given name
-    parent_field = try_get_ast_by_name_and_type(selections, field_name, Field)
     if parent_field is not None:
         # Existing field, add all its directives
         directives_from_existing_field = parent_field.directives
@@ -425,7 +496,7 @@ def _get_property_field(selections, field_name, directives_from_edge):
     return new_field
 
 
-def _get_child_type_and_selections(ast, type_info):
+def _get_child_type_and_selections(ast, child_type_name):
     """Get the type (root field) and selection set of the input AST.
 
     For instance, if the root of the AST is a vertex field that goes to type Animal, the
@@ -445,15 +516,6 @@ def _get_child_type_and_selections(ast, type_info):
         Tuple[str, List[Union[Field, InlineFragment]]], name and selections of the root
         vertex field of the input AST if it were made into its own separate Document
     """
-    child_type = type_info.get_type()  # GraphQLType
-    if child_type is None:
-        raise SchemaStructureError(
-            u'The provided merged schema descriptor may be invalid, as the type '
-            u'corresponding to the field "{}" under type "{}" cannot be '
-            u'found.'.format(ast.name.value, type_info.get_parent_type())
-        )
-    child_type_name = strip_non_null_and_list_from_type(child_type).name
-
     child_selection_set = ast.selection_set
     # Adjust for type coercion
     if (
