@@ -102,6 +102,40 @@ def split_query(query_ast, merged_schema_descriptor):
     return root_query_node, frozenset(intermediate_out_name_assigner.intermediate_output_names)
 
 
+def _get_edge_to_stitch_fields(merged_schema_descriptor):
+    """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
+
+    This is necessary only because GraphQL currently doesn't process schema directives correctly.
+    Once schema directives are correctly added to GraphQLSchema objects, this part may be
+    removed as directives on a schema field can be directly accessed.
+
+    Args:
+        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing a schema ast
+                                  and a map from names of types to their schema ids
+
+    Returns:
+        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, vertex field name) to
+        (source field name, sink field name) used in the @stitch directive, for each cross
+        schema edge
+    """
+    edge_to_stitch_fields = {}
+    for type_definition in merged_schema_descriptor.schema_ast.definitions:
+        if isinstance(type_definition, (
+            ObjectTypeDefinition, InterfaceTypeDefinition
+        )):
+            for field_definition in type_definition.fields:
+                stitch_directive = try_get_ast_by_name_and_type(
+                    field_definition.directives, u'stitch', Directive
+                )
+                if stitch_directive is not None:
+                    source_field_name = stitch_directive.arguments[0].value.value
+                    sink_field_name = stitch_directive.arguments[1].value.value
+                    edge = (type_definition.name.value, field_definition.name.value)
+                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
+
+    return edge_to_stitch_fields
+
+
 def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_fields,
                            intermediate_out_name_assigner):
     """Split the query node, creating children out of all branches across cross schema edges.
@@ -432,40 +466,6 @@ def _get_child_type_and_selections(ast, type_info):
         child_selection_set = type_coercion_inline_fragment.selection_set
 
     return child_type_name, child_selection_set.selections
-
-
-def _get_edge_to_stitch_fields(merged_schema_descriptor):
-    """Get a map from type/field of each cross schema edge, to the fields that the edge stitches.
-
-    This is necessary only because GraphQL currently doesn't process schema directives correctly.
-    Once schema directives are correctly added to GraphQLSchema objects, this part may be
-    removed as directives on a schema field can be directly accessed.
-
-    Args:
-        merged_schema_descriptor: MergedSchemaDescriptor namedtuple, containing a schema ast
-                                  and a map from names of types to their schema ids
-
-    Returns:
-        Dict[Tuple(str, str), Tuple(str, str)], mapping (type name, vertex field name) to
-        (source field name, sink field name) used in the @stitch directive, for each cross
-        schema edge
-    """
-    edge_to_stitch_fields = {}
-    for type_definition in merged_schema_descriptor.schema_ast.definitions:
-        if isinstance(type_definition, (
-            ObjectTypeDefinition, InterfaceTypeDefinition
-        )):
-            for field_definition in type_definition.fields:
-                stitch_directive = try_get_ast_by_name_and_type(
-                    field_definition.directives, u'stitch', Directive
-                )
-                if stitch_directive is not None:
-                    source_field_name = stitch_directive.arguments[0].value.value
-                    sink_field_name = stitch_directive.arguments[1].value.value
-                    edge = (type_definition.name.value, field_definition.name.value)
-                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
-
-    return edge_to_stitch_fields
 
 
 def _replace_or_insert_property_field(selections, new_field):
