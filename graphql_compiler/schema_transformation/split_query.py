@@ -2,7 +2,10 @@
 from collections import namedtuple
 from copy import copy
 
-from graphql.language import ast as ast_types
+from graphql.language.ast import (
+    Argument, Directive, Document, Field, InlineFragment, InterfaceTypeDefinition, Name,
+    ObjectTypeDefinition, OperationDefinition, SelectionSet, StringValue
+)
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.utils.type_info import TypeInfo
 
@@ -139,7 +142,7 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
     )
     type_info.leave(operation_definition)
 
-    query_node.query_ast = ast_types.Document(
+    query_node.query_ast = Document(
         definitions=[new_operation_definition]
     )
     # Set schema id, check for consistency
@@ -204,7 +207,7 @@ def _split_query_ast_one_level_recursive(
     """
     # Check if there is a split here. If so, split AST, make child query node, return property
     # field. If not, recurse on all child selections (if any)
-    if isinstance(ast, ast_types.Field):
+    if isinstance(ast, Field):
         parent_type_name = type_info.get_parent_type().name
         edge_field_name = ast.name.value
         if (parent_type_name, edge_field_name) in edge_to_stitch_fields:
@@ -268,7 +271,7 @@ def _split_query_ast_one_level_recursive(
 
     if made_changes:
         ast_copy = copy(ast)
-        ast_copy.selection_set = ast_types.SelectionSet(selections=new_selections)
+        ast_copy.selection_set = SelectionSet(selections=new_selections)
         return ast_copy
     else:
         return ast
@@ -350,13 +353,13 @@ def _get_property_field(selections, field_name, directives_from_edge):
         Field object, with field_name as its name, containing directives from any field in the
         input selections with the same name and directives from the input list of directives
     """
-    new_field = ast_types.Field(
-        name=ast_types.Name(value=field_name),
+    new_field = Field(
+        name=Name(value=field_name),
         directives=[],
     )
 
     # Check parent_selection for existing field of given name
-    parent_field = try_get_ast_by_name_and_type(selections, field_name, ast_types.Field)
+    parent_field = try_get_ast_by_name_and_type(selections, field_name, Field)
     if parent_field is not None:
         # Existing field, add all its directives
         directives_from_existing_field = parent_field.directives
@@ -373,7 +376,7 @@ def _get_property_field(selections, field_name, directives_from_edge):
                 )
             elif directive.name.value == OptionalDirective.name:
                 if try_get_ast_by_name_and_type(
-                    new_field.directives, OptionalDirective.name, ast_types.Directive
+                    new_field.directives, OptionalDirective.name, Directive
                 ) is None:
                     # New optional directive
                     new_field.directives.append(directive)
@@ -422,7 +425,7 @@ def _get_child_type_and_selections(ast, type_info):
     if (
         child_selection_set is not None and
         len(child_selection_set.selections) == 1 and
-        isinstance(child_selection_set.selections[0], ast_types.InlineFragment)
+        isinstance(child_selection_set.selections[0], InlineFragment)
     ):
         type_coercion_inline_fragment = child_selection_set.selections[0]
         child_type_name = type_coercion_inline_fragment.type_condition.name.value
@@ -450,11 +453,11 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
     edge_to_stitch_fields = {}
     for type_definition in merged_schema_descriptor.schema_ast.definitions:
         if isinstance(type_definition, (
-            ast_types.ObjectTypeDefinition, ast_types.InterfaceTypeDefinition
+            ObjectTypeDefinition, InterfaceTypeDefinition
         )):
             for field_definition in type_definition.fields:
                 stitch_directive = try_get_ast_by_name_and_type(
-                    field_definition.directives, u'stitch', ast_types.Directive
+                    field_definition.directives, u'stitch', Directive
                 )
                 if stitch_directive is not None:
                     source_field_name = stitch_directive.arguments[0].value.value
@@ -484,7 +487,7 @@ def _replace_or_insert_property_field(selections, new_field):
     selections = copy(selections)
     for index, selection in enumerate(selections):
         if (
-            isinstance(selection, ast_types.Field) and
+            isinstance(selection, Field) and
             selection.name.value == new_field.name.value
         ):
             selections[index] = new_field
@@ -512,7 +515,7 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
     """
     # Check for existing directive
     output_directive = try_get_ast_by_name_and_type(
-        field.directives, OutputDirective.name, ast_types.Directive
+        field.directives, OutputDirective.name, Directive
     )
     if output_directive is None:
         # Create and add new directive to field
@@ -528,12 +531,12 @@ def _get_out_name_optionally_add_output(field, intermediate_out_name_assigner):
 
 def _get_output_directive(out_name):
     """Return a Directive representing an @output with the input out_name."""
-    return ast_types.Directive(
-        name=ast_types.Name(value=OutputDirective.name),
+    return Directive(
+        name=Name(value=OutputDirective.name),
         arguments=[
-            ast_types.Argument(
-                name=ast_types.Name(value=u'out_name'),
-                value=ast_types.StringValue(value=out_name),
+            Argument(
+                name=Name(value=u'out_name'),
+                value=StringValue(value=out_name),
             ),
         ],
     )
@@ -541,15 +544,15 @@ def _get_output_directive(out_name):
 
 def _get_query_document(root_vertex_field_name, root_selections):
     """Return a Document representing a query with the specified name and selections."""
-    return ast_types.Document(
+    return Document(
         definitions=[
-            ast_types.OperationDefinition(
+            OperationDefinition(
                 operation='query',
-                selection_set=ast_types.SelectionSet(
+                selection_set=SelectionSet(
                     selections=[
-                        ast_types.Field(
-                            name=ast_types.Name(value=root_vertex_field_name),
-                            selection_set=ast_types.SelectionSet(
+                        Field(
+                            name=Name(value=root_vertex_field_name),
+                            selection_set=SelectionSet(
                                 selections=root_selections,
                             ),
                             directives=[],
@@ -564,6 +567,20 @@ def _get_query_document(root_vertex_field_name, root_selections):
 def _add_query_connections(parent_query_node, child_query_node, parent_field_out_name,
                            child_field_out_name):
     """Modify parent and child SubQueryNodes by adding QueryConnections between them."""
+    if child_query_node.parent_query_connection is not None:
+        raise AssertionError(
+            u'The input child query node already has a parent connection, {}'.format(
+                child_query_node.parent_query_connection
+            )
+        )
+    if any(
+        query_connection_from_parent.sink_query_node is child_query_node
+        for query_connection_from_parent in parent_query_node.child_query_connections
+    ):
+        raise AssertionError(
+            u'The input parent query node already has the child query node in a child query '
+            u'connection.'
+        )
     # Create QueryConnections
     new_query_connection_from_parent = QueryConnection(
         sink_query_node=child_query_node,
