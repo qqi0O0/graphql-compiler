@@ -56,7 +56,9 @@ class RestrictSchemaTypesVisitor(Visitor):
         """Create a visitor for removing types and fields.
 
         Args:
-            types_to_keep: Set[str], the set of names of types that we want to keep in the schema
+            types_to_keep: Set[str], the set of names of object, interface, and union types that
+                           we want to keep in the output schema. All scalar and enum types are
+                           kept by default
             query_type: str, name of the query type in the schema. The query type is always kept
             scalars: str, names of scalar types, both builtin and user defined. Used to identify
                      property fields, as such fields are kept
