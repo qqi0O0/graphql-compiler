@@ -151,7 +151,6 @@ type Cat {
   age: Int
 }
 
-
 union CreatureOrCat = Creature | Cat
 
 type SchemaQuery {

@@ -388,7 +388,7 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Animal {
-                uuid @optional
+                uuid @optional @filter(op_name: "=", value: ["$uuid_to_select"])
                 out_Animal_Creature @optional {
                   age @output(out_name: "age")
                 }
@@ -398,7 +398,8 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Animal {
-                uuid @optional @output(out_name: "__intermediate_output_0")
+                uuid @optional @filter(op_name: "=", value: ["$uuid_to_select"]) \
+@output(out_name: "__intermediate_output_0")
               }
             }
         ''')
