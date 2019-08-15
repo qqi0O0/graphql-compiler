@@ -1,7 +1,6 @@
 # Copyright 2019-present Kensho Technologies, LLC.
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict, namedtuple
 from copy import copy
-import six
 
 from graphql.language.ast import (
     Argument, Directive, Document, Field, InlineFragment, InterfaceTypeDefinition, Name,
@@ -9,6 +8,7 @@ from graphql.language.ast import (
 )
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.utils.type_info import TypeInfo
+import six
 
 from ..ast_manipulation import get_only_query_definition
 from ..compiler.helpers import strip_non_null_and_list_from_type
