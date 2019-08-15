@@ -69,8 +69,6 @@ class TestSplitQuery(unittest.TestCase):
         )
         return frozenset(output_names)
 
-    # TODO:
-    # Test like where the Cat type didn't have a corresponding root field
 
     def test_no_split(self):
         query_str = dedent('''\

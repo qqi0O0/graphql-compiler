@@ -114,7 +114,7 @@ interface_merged_schema = merge_schemas(
 )
 
 
-def get_type_equivalence_hints(schema_id_to_ast, type_equivalence_hints_names):
+def _get_type_equivalence_hints(schema_id_to_ast, type_equivalence_hints_names):
     """Get type_equivalence_hints for input into merge_schemas.
 
     Args:
@@ -184,7 +184,7 @@ union_merged_schema = merge_schemas(
             out_edge_only=False,
         ),
     ],
-    get_type_equivalence_hints(union_schema_id_to_ast, {'Creature': 'CreatureOrCat'})
+    _get_type_equivalence_hints(union_schema_id_to_ast, {'Creature': 'CreatureOrCat'})
 )
 
 
