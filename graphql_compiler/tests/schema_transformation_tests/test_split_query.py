@@ -69,7 +69,6 @@ class TestSplitQuery(unittest.TestCase):
         )
         return frozenset(output_names)
 
-
     def test_no_split(self):
         query_str = dedent('''\
             {

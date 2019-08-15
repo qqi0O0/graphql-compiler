@@ -3,8 +3,8 @@ from collections import OrderedDict, namedtuple
 from copy import copy
 
 from graphql.language.ast import (
-    Argument, Directive, Document, Field, InlineFragment, InterfaceTypeDefinition, Name,
-    ObjectTypeDefinition, OperationDefinition, SelectionSet, StringValue
+    Argument, Directive, Document, Field, InterfaceTypeDefinition, Name, ObjectTypeDefinition,
+    OperationDefinition, SelectionSet, StringValue
 )
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.utils.type_info import TypeInfo

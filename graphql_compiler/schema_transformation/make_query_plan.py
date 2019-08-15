@@ -1,10 +1,10 @@
 # Copyright 2019-present Kensho Technologies, LLC.
 from collections import namedtuple
-from copy import deepcopy
+from copy import copy
 
 from graphql import print_ast
 from graphql.language import ast as ast_types
-from graphql.language.visitor import visit, Visitor
+from graphql.language.visitor import Visitor, visit
 
 from ..exceptions import GraphQLValidationError
 from .utils import try_get_ast_by_name_and_type
