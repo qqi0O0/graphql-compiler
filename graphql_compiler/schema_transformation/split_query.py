@@ -11,13 +11,12 @@ from graphql.utils.type_info import TypeInfo
 import six
 
 from ..ast_manipulation import get_only_query_definition
-from ..compiler.frontend import _get_inline_fragment
 from ..compiler.helpers import strip_non_null_and_list_from_type
 from ..exceptions import GraphQLValidationError
 from ..schema import FilterDirective, OptionalDirective, OutputDirective
 from .utils import (
     SchemaStructureError, check_query_is_valid_to_split, is_property_field_ast,
-    try_get_ast_by_name_and_type
+    try_get_ast_by_name_and_type, try_get_inline_fragment
 )
 
 
@@ -230,7 +229,7 @@ def _split_query_ast_one_level_recursive(
     """
     type_info.enter(ast.selection_set)
     selections = ast.selection_set.selections
-    if _get_inline_fragment(selections) is not None:
+    if try_get_inline_fragment(selections) is not None:
         # Case 1: type coercion
         new_selections = _split_query_ast_one_level_recursive_type_coercion(
             query_node, selections, type_info, edge_to_stitch_fields, name_assigner
@@ -276,7 +275,7 @@ def _split_query_ast_one_level_recursive_type_coercion(
         list of selections in the SelectionSet one level above. If no changes were made, the
         exact input list object will be returned
     """
-    type_coercion = _get_inline_fragment(selections)
+    type_coercion = try_get_inline_fragment(selections)
 
     type_info.enter(type_coercion)
     new_type_coercion = _split_query_ast_one_level_recursive(
@@ -552,10 +551,10 @@ def _get_child_query_node_and_out_name(ast, child_type_name, child_field_name, n
     """
     # Get type and selections of child AST, taking into account type coercions
     child_selection_set = ast.selection_set
-    type_coercion_inline_fragment = _get_inline_fragment(child_selection_set)
-    if type_coercion_inline_fragment is not None:
-        child_type_name = type_coercion_inline_fragment.type_condition.name.value
-        child_selection_set = type_coercion_inline_fragment.selection_set
+    type_coercion = try_get_inline_fragment(child_selection_set.selections)
+    if type_coercion is not None:
+        child_type_name = type_coercion.type_condition.name.value
+        child_selection_set = type_coercion.selection_set
     child_selections = child_selection_set.selections
 
     # Get existing field with name in child
