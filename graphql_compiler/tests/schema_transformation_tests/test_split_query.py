@@ -28,7 +28,7 @@ ExampleQueryNode = namedtuple(
 class TestSplitQuery(unittest.TestCase):
     def _check_query_node_structure(self, root_query_node, root_example_query_node):
         """Check root_query_node has no parent and has the same structure as the example input."""
-        self.assertIs(root_query_node.parent_query_connection, None)
+        self.assertIsNone(root_query_node.parent_query_connection)
         self._check_query_node_structure_helper(root_query_node, root_example_query_node)
 
     def _check_query_node_structure_helper(self, query_node, example_query_node):
