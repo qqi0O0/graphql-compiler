@@ -321,8 +321,8 @@ def is_property_field_ast(field):
     """Return True if selection is a property field, False if a vertex field.
 
     Args:
-        selection: Field object. It is considered to be a property field if it has no further
-                   selections
+        field: Field object. It is considered to be a property field if it has no further
+               selections
 
     Returns:
         True if the selection is a property field, False if it's a vertex field.

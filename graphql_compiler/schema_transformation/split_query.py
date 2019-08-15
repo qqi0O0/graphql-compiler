@@ -71,13 +71,13 @@ def split_query(query_ast, merged_schema_descriptor):
 
     Raises:
         - GraphQLValidationError if the query doesn't validate against the schema, contains
-          unsupported directives, or some property field occurs after a vertex field in some
-          selection
+          unsupported directives, some property field occurs after a vertex field in some
+          selection, or some inline fragment coexists with other fields or inline fragment
+          on the same scope
         - SchemaStructureError if the input merged_schema_descriptor appears to be invalid
           or inconsistent
     """
     check_query_is_valid_to_split(merged_schema_descriptor.schema, query_ast)
-    # TODO: add check that InlineFragments don't occur together with other things
 
     # If schema directives are correctly represented in the schema object, type_info is all
     # that's needed to detect and address stitching fields. However, GraphQL currently ignores
@@ -181,7 +181,6 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
     query_node.query_ast = Document(
         definitions=[new_operation_definition]
     )
-    print(query_node.query_ast)
     # Set schema id, check for consistency
     visitor = TypeInfoVisitor(
         type_info,
@@ -225,7 +224,6 @@ def _split_query_ast_one_level_recursive(
     """
     type_info.enter(ast.selection_set)
     selections = ast.selection_set.selections
-
     if (
         len(selections) == 1 and
         isinstance(selections[0], InlineFragment)
@@ -239,7 +237,6 @@ def _split_query_ast_one_level_recursive(
         new_selections = _split_query_ast_one_level_recursive_normal_fields(
             query_node, selections, type_info, edge_to_stitch_fields, name_assigner
         )
-
     type_info.leave(ast.selection_set)
 
     # Return input, or make copy
@@ -589,7 +586,7 @@ def _get_child_query_node_and_out_name(ast, child_type_name, child_field_name, n
     return child_query_node, child_output_name
 
 
-def _get_property_field(parent_field, field_name, directives_from_edge):
+def _get_property_field(existing_field, field_name, directives_from_edge):
     """Return a Field object with field_name, sharing directives with any such existing field.
 
     Any valid directives in directives_on_edge will be transferred over to the new field.
@@ -597,9 +594,8 @@ def _get_property_field(parent_field, field_name, directives_from_edge):
     will also contain all directives of the existing field with that name.
 
     Args:
-        selections: List[Union[Field, InlineFragment]]. If there is a field with field_name,
-                    the directives of this field will carry over to the output field. It is
-                    not modified by this function
+        existing_field: Field or None. If it's not None, it is a field with field_name. The
+                        directives of this field will carry output to the output field
         field_name: str, the name of the output field
         directives_from_edge: List[Directive], the directives of a vertex field. The output
                               field will contain all @filter and any @optional directives
@@ -615,9 +611,9 @@ def _get_property_field(parent_field, field_name, directives_from_edge):
     )
 
     # Transfer directives from existing field of the same name
-    if parent_field is not None:
+    if existing_field is not None:
         # Existing field, add all its directives
-        directives_from_existing_field = parent_field.directives
+        directives_from_existing_field = existing_field.directives
         if directives_from_existing_field is not None:
             new_field.directives.extend(directives_from_existing_field)
     # Transfer directives from edge
