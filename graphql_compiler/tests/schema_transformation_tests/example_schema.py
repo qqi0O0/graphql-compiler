@@ -73,17 +73,19 @@ interface Creature {
 type Cat implements Creature {
   id: String
   age: Int
+  meow: String
 }
 
-type Company {
+type Dog implements Creature {
   id: String
   age: Int
+  bark: String
 }
 
 type SchemaQuery {
   Creature: Creature
   Cat: Cat
-  Company: Company
+  Dog: Dog
 }
 '''
 
@@ -149,17 +151,12 @@ type Cat {
   age: Int
 }
 
-type Company {
-  id: String
-  age: Int
-}
 
 union CreatureOrCat = Creature | Cat
 
 type SchemaQuery {
   Creature: Creature
   Cat: Cat
-  Company: Company
 }
 '''
 

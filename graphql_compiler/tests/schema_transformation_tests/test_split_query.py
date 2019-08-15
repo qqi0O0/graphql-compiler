@@ -433,7 +433,6 @@ class TestSplitQuery(unittest.TestCase):
         query_str = dedent('''\
             {
               Entity {
-                name @output(out_name: "name")
                 ... on Animal {
                   out_Animal_Creature {
                     age @output(out_name: "age")
@@ -445,7 +444,6 @@ class TestSplitQuery(unittest.TestCase):
         parent_str = dedent('''\
             {
               Entity {
-                name @output(out_name: "name")
                 ... on Animal {
                   uuid @output(out_name: "__intermediate_output_0")
                 }
@@ -994,3 +992,36 @@ class TestSplitQueryInvalidQuery(unittest.TestCase):
         ''')
         with self.assertRaises(GraphQLValidationError):
             split_query(parse(query_str), basic_merged_schema)
+
+    def test_invalid_query_inline_not_only_selection_in_scope(self):
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  age @output(out_name: "age")
+                  ... on Cat {
+                    meow @output(out_name: "meow")
+                  }
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), interface_merged_schema)
+
+        query_str = dedent('''\
+            {
+              Animal {
+                out_Animal_Creature {
+                  ... on Cat {
+                    meow @output(out_name: "meow")
+                  }
+                  ... on Dog {
+                    bark @output(out_name: "bark")
+                  }
+                }
+              }
+            }
+        ''')
+        with self.assertRaises(GraphQLValidationError):
+            split_query(parse(query_str), interface_merged_schema)
