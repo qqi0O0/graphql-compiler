@@ -8,6 +8,7 @@ from graphql.language.ast import (
 )
 from graphql.language.visitor import TypeInfoVisitor, Visitor, visit
 from graphql.utils.type_info import TypeInfo
+from graphql.validation import validate
 import six
 
 from ..ast_manipulation import get_only_query_definition
@@ -84,7 +85,7 @@ def split_query(query_ast, merged_schema_descriptor):
     # schema directives when converting an AST to a schema object. Until this issue is
     # fixed, it's necessary to use additional information from pre-processing the schema AST
     edge_to_stitch_fields = _get_edge_to_stitch_fields(merged_schema_descriptor)
-    intermediate_out_name_assigner = IntermediateOutNameAssigner()
+    name_assigner = IntermediateOutNameAssigner()
 
     root_query_node = SubQueryNode(query_ast)
     query_nodes_to_split = [root_query_node]
@@ -94,14 +95,14 @@ def split_query(query_ast, merged_schema_descriptor):
         current_node_to_split = query_nodes_to_split.pop()
 
         _split_query_one_level(current_node_to_split, merged_schema_descriptor,
-                               edge_to_stitch_fields, intermediate_out_name_assigner)
+                               edge_to_stitch_fields, name_assigner)
 
         query_nodes_to_split.extend(
             child_query_connection.sink_query_node
             for child_query_connection in current_node_to_split.child_query_connections
         )
 
-    return root_query_node, frozenset(intermediate_out_name_assigner.intermediate_output_names)
+    return root_query_node, frozenset(name_assigner.intermediate_output_names)
 
 
 def _get_edge_to_stitch_fields(merged_schema_descriptor):
@@ -132,14 +133,14 @@ def _get_edge_to_stitch_fields(merged_schema_descriptor):
                 if stitch_directive is not None:
                     source_field_name = stitch_directive.arguments[0].value.value
                     sink_field_name = stitch_directive.arguments[1].value.value
-                    edge = (type_definition.name.value, field_definition.name.value)
-                    edge_to_stitch_fields[edge] = (source_field_name, sink_field_name)
+                    stitch_data_key = (type_definition.name.value, field_definition.name.value)
+                    edge_to_stitch_fields[stitch_data_key] = (source_field_name, sink_field_name)
 
     return edge_to_stitch_fields
 
 
 def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_fields,
-                           intermediate_out_name_assigner):
+                           name_assigner):
     """Split the query node, creating children out of all branches across cross schema edges.
 
     The input query_node will be modified. Its query_ast will be replaced by a new AST with
@@ -157,9 +158,8 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
                                (type name, vertex field name) to
                                (source field name, sink field name) used in the @stitch directive
                                for each cross schema edge
-        intermediate_out_name_assigner: IntermediateOutNameAssigner, object used to generate
-                                        and keep track of names of newly created @output
-                                        directives
+        name_assigner: IntermediateOutNameAssigner, object used to generate and keep track of
+                       names of newly created @output directive
 
     Raises:
         - GraphQLValidationError if the query AST contained in the input query_node is invalid,
@@ -173,15 +173,23 @@ def _split_query_one_level(query_node, merged_schema_descriptor, edge_to_stitch_
 
     type_info.enter(operation_definition)
     new_operation_definition = _split_query_ast_one_level_recursive(
-        query_node, operation_definition, type_info,
-        edge_to_stitch_fields, intermediate_out_name_assigner
+        query_node, operation_definition, type_info, edge_to_stitch_fields, name_assigner
     )
     type_info.leave(operation_definition)
 
-    query_node.query_ast = Document(
-        definitions=[new_operation_definition]
-    )
-    # TODO: check new ast is valid
+    if new_operation_definition is not operation_definition:
+        new_query_ast = copy(query_node.query_ast)
+        new_query_ast.definitions = [new_operation_definition]
+        query_node.query_ast = new_query_ast
+
+    # Check resulting AST is valid
+    validation_errors = validate(merged_schema_descriptor.schema, query_node.query_ast)
+    if len(validation_errors) > 0:
+        raise AssertionError(
+            u'The resulting split query "{}" is invalid, with the following error messages: {}'
+            u''.format(query_node.query_ast, validation_errors)
+        )
+
     # Set schema id, check for consistency
     visitor = TypeInfoVisitor(
         type_info,
