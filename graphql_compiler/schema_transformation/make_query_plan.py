@@ -4,10 +4,10 @@ from copy import copy
 
 from graphql import print_ast
 from graphql.language import ast as ast_types
-from graphql.language.visitor import Visitor, visit
 
+from ..ast_manipulation import get_only_query_definition
 from ..exceptions import GraphQLValidationError
-from .utils import try_get_ast_by_name_and_type
+from ..schema import FilterDirective, OutputDirective
 
 
 SubQueryPlan = namedtuple(
@@ -39,20 +39,14 @@ QueryPlanDescriptor = namedtuple(
 )
 
 
-# NOTE: now this part only adds @filter directives, @output have been added
-# Change doc strings
-
-
 def make_query_plan(root_sub_query_node, intermediate_output_names):
     """Return a QueryPlanDescriptor, whose query ASTs have @filters added.
 
     For each parent of parent and child SubQueryNodes, a new @filter directive will be added
-    in the child AST, on the field with the @output directive with an out_name equal to the
-    child's out name as specified in the QueryConnections. The newly added @filter will be a
-    in_collection type filter, and the name of the local variable is guaranteed to be the same
-    as the out_name of the parent @output. When the child is to be executed, the local variable
-    should take as input the output of the parent with the same name.
-    TODO rephrase the above
+    in the child AST. It will be added on the field whose @output directive has the out_name
+    equal to the child's out name as specified in the QueryConnection. The newly added @filter
+    will be a 'in_collection' type filter, and the name of the local variabe is guaranteed to
+    be the same as the out_name of the @output on the parent.
 
     ASTs contained in the input node and its children nodes will not be modified.
 
@@ -66,21 +60,16 @@ def make_query_plan(root_sub_query_node, intermediate_output_names):
         to be removed at the end, and information on which outputs are to be connect to which
         in what manner
     """
-    # Making the input filter name identical to the output name can cause name conflicts in a
-    # very uncommon edge case, where the user has defined the parent @output, and also has
-    # defined a variable with the same name.
-
-    # The following variables are modified by the helper functions defined inside
     output_join_descriptors = []
 
     root_sub_query_plan = SubQueryPlan(
-        query_ast=root_sub_query_node.query_ast,  # NOTE: careful about no modifications
+        query_ast=root_sub_query_node.query_ast,
         schema_id=root_sub_query_node.schema_id,
         parent_query_plan=None,
         child_query_plans=[],
     )
 
-    _make_query_plan_recursive(root_sub_query_node, root_sub_query_plan)
+    _make_query_plan_recursive(root_sub_query_node, root_sub_query_plan, output_join_descriptors)
 
     return QueryPlanDescriptor(
         root_sub_query_plan=root_sub_query_plan,
@@ -89,7 +78,7 @@ def make_query_plan(root_sub_query_node, intermediate_output_names):
     )
 
 
-def _make_query_plan_recursive(sub_query_node, sub_query_plan):
+def _make_query_plan_recursive(sub_query_node, sub_query_plan, output_join_descriptors):
     """Recursively copy the structure of sub_query_node onto sub_query_plan.
 
     For each child connection contained in sub_query_node, create a new SubQueryPlan for
@@ -102,28 +91,32 @@ def _make_query_plan_recursive(sub_query_node, sub_query_plan):
         sub_query_plan: SubQueryPlan, whose list of child query plans and query AST are
                         modified
     """
-    parent_query_ast = sub_query_plan.query_ast  # Can modify and add directives directly
-
     # Iterate through child connections of query node
     for child_query_connection in sub_query_node.child_query_connections:
         child_sub_query_node = child_query_connection.sink_query_node
         parent_out_name = child_query_connection.source_field_out_name
         child_out_name = child_query_connection.sink_field_out_name
 
-        child_query_ast = child_sub_query_node.query_ast
-        child_query_ast_with_filter = _add_filter_at_field_with_output(
-            child_query_ast, child_out_name, parent_out_name
+        child_query_type = get_only_query_definition(
+            child_sub_query_node.query_ast, GraphQLValidationError
+        )
+        child_query_type_with_filter = _add_filter_at_field_with_output(
+            child_query_type, child_out_name, parent_out_name
             # @filter's local variable is named the same as the out_name of the parent's @output
         )
-        if child_query_ast is child_query_ast_with_filter:
+        if child_query_type is child_query_type_with_filter:
             raise AssertionError(
                 u'An @output directive with out_name "{}" is unexpectedly not found in the '
-                u'AST "{}".'.format(child_out_name, child_query_ast)
+                u'AST "{}".'.format(child_out_name, child_query_type)
+            )
+        else:
+            new_child_query_ast = ast_types.Document(
+                definitions=[child_query_type_with_filter]
             )
 
         # Create new SubQueryPlan for child
         child_sub_query_plan = SubQueryPlan(
-            query_ast=child_query_ast_with_filter,
+            query_ast=new_child_query_ast,
             schema_id=child_sub_query_node.schema_id,
             parent_query_plan=sub_query_plan,
             child_query_plans=[],
@@ -139,7 +132,9 @@ def _make_query_plan_recursive(sub_query_node, sub_query_plan):
         output_join_descriptors.append(new_output_join_descriptor)
 
         # Recursively repeat on child SubQueryPlans
-        _make_query_plan_helper(child_sub_query_node, child_sub_query_plan)
+        _make_query_plan_recursive(
+            child_sub_query_node, child_sub_query_plan, output_join_descriptors
+        )
 
 
 def _add_filter_at_field_with_output(ast, field_out_name, input_filter_name):
@@ -185,7 +180,7 @@ def _add_filter_at_field_with_output(ast, field_out_name, input_filter_name):
     if ast.selection_set is None:  # Nothing to recurse on
         return ast
 
-    # Otherwise, recurse and look for field with name
+    # Otherwise, recurse and look for field with desired out_name
     made_changes = False
     new_selections = []
     for selection in ast.selection_set.selections:
@@ -214,14 +209,19 @@ def _add_filter_at_field_with_output(ast, field_out_name, input_filter_name):
 
 
 def _is_output_directive_with_name(directive, out_name):
+    """Return whether or not the input is an @output directive with the desired out_name."""
     if not isinstance(directive, ast_types.Directive):
         raise AssertionError(u'Input "{}" is not a directive.'.format(directive))
-    return directive.name.value == u'output' and directive.arguments[0].value.value == out_name
+    return (
+        directive.name.value == OutputDirective.name and
+        directive.arguments[0].value.value == out_name
+    )
 
 
 def _get_in_collection_filter_directive(input_filter_name):
+    """Create a @filter directive with in_collecion operation and the desired variable name."""
     return ast_types.Directive(
-        name=ast_types.Name(value=u'filter'),
+        name=ast_types.Name(value=FilterDirective.name),
         arguments=[
             ast_types.Argument(
                 name=ast_types.Name(value='op_name'),
@@ -240,7 +240,7 @@ def _get_in_collection_filter_directive(input_filter_name):
 
 
 def print_query_plan(query_plan_descriptor):
-    """Return string describing query plan."""
+    """Return a string describing query plan."""
     query_plan_str = u''
     plan_and_depth = _get_plan_and_depth_in_dfs_order(query_plan_descriptor.root_sub_query_plan)
 
@@ -263,6 +263,7 @@ def print_query_plan(query_plan_descriptor):
 
 
 def _get_plan_and_depth_in_dfs_order(query_plan):
+    """Helper for print_query_plan and other functions needing dfs order traversal."""
     def _get_plan_and_depth_in_dfs_order_helper(query_plan, depth):
         plan_and_depth_in_dfs_order = [(query_plan, depth)]
         for child_query_plan in query_plan.child_query_plans:
@@ -271,14 +272,3 @@ def _get_plan_and_depth_in_dfs_order(query_plan):
             )
         return plan_and_depth_in_dfs_order
     return _get_plan_and_depth_in_dfs_order_helper(query_plan, 0)
-
-
-# Ok, conclusion:
-# Keep track of set of user output columns, update parent set with union when joining
-# Can also keep track of set of intermediate columns that we assigned
-# Delete all non-user-output columns at the very end
-# Columns have globally unique names
-# Each merging edge keeps track of names of parent and child columns, as well as any additional
-#   information (is optional join, etc)
-# When merging, both columns are kept
-# Fail if merging with both ends being user output?
